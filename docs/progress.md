@@ -177,7 +177,7 @@ font; palette bank 0 for model textures (M3 correction). User keyboard: US.
 **Known limits:** box frame is a placeholder; line spacing (34 px) is measured, not yet from code — both
 come with the typing milestone (M8).
 
-## M7 — Stage 1 fly-through (in progress)
+## M7 — Stage 1 fly-through ✅
 
 ### 7a — Stage geometry ✅ (2026-11-22)
 **Delivered:** renderer batches each mesh's primitives per cull mode into one triangle list (same strip
@@ -212,3 +212,14 @@ same formula.
 doubling/ordering (tests). Screenshot of path 2 with the game's lighting.
 **Open:** each scene's actual light/fog values are set by event commands → M9 (the panel lets you explore
 until then).
+
+### 7d — Moving objects (2026-11-23) ✅ verified by user 2026-11-23
+**Delivered:** `prop.ts` (30 prop skeletons, prop motion layout, playback modes 0/1/2 as
+`prop_joint_transform`, the game's type→motion pairings); Props tab (list of props, fitting motions with
+★ game pairing, 60 Hz playback, frame slider).
+**Verified:** a test checks that every game pairing fits the decoded layout exactly; frame-0 contact sheet of
+all 30 props shows intact objects (barrels, gates, panes, chairs, pots, door); glass and door debris
+animate apart.
+**Traced:** cars are code-built (body + spinning wheels) and event-driven, so placing them is M9.
+**Open:** mode-2 big-turn matrix blend (approximated); #16 frame range; #29 has no motion; four
+pairings not yet seen in code. Props and cars appear in the Stage view with M9 (their owners place them).

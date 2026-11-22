@@ -91,14 +91,18 @@ Each milestone: **deliverable → how you verify**.
 - [x] **M6 — Font + word lists.** Decode `font.bin` and `word/` lists; browsable word list viewer
   rendered with the original font.
   → Words and font match what you see in-game.
-- [ ] **M7 — Stage fly-through.** Stage geometry + `cam/` rail playback for Stage 1, with the game's exact
+- [x] **M7 — Stage fly-through.** Stage geometry + `cam/` rail playback for Stage 1, with the game's exact
   lighting (D3D7 per-vertex lighting + the game's light/ambient values) and fog.
-  → Camera path matches the Stage 1 route.
+  Sub-steps: 7a geometry ✅ · 7b camera paths ✅ · 7c lighting & fog ✅ · 7d moving objects ✅ — the 30
+  animated prop types (boxes/`komono`, doors, glass, bridges, water…) decoded with their animations and
+  a Props tab to watch each one; cars (`car_*`, plain models moved by code) traced.
+  → Camera path matches the Stage 1 route; each prop animates like the original.
 - [ ] **M8 — Typing core.** Typing range: words appear, input matching, mistakes, scoring —
   ported from the exe.
   → Typing feel and score values match the original.
 - [ ] **M9 — Event tables.** Decode `evt/` (pointer rebasing) + Stage 1 event timeline viewer.
-  → Spawns/events line up with Stage 1.
+  Includes placing props and cars in the stage and triggering their movement at the scripted moment.
+  → Spawns/events line up with Stage 1; props and cars appear and move in the Stage view during playback.
 - [ ] **M9b — Stage 1 story scenes.** Play Stage 1's scripted scenes as the game does: characters with
   their motions, camera cuts (standalone camera paths), voices and subtitles in sync, driven by the event
   tables. (No video files exist — all scenes are real-time.)

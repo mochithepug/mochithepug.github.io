@@ -22,6 +22,7 @@
       <button data-tab="textures" class="tab">Textures</button>
       <button data-tab="models" class="tab">Models</button>
       <button data-tab="chars" class="tab">Characters</button>
+      <button data-tab="props" class="tab">Props</button>
       <button data-tab="words" class="tab">Words</button>
       <button data-tab="stage" class="tab">Stage</button>
     </nav>
@@ -106,6 +107,35 @@
           </div>
           <div class="canvas-wrap"><canvas id="chr-canvas"></canvas>
             <div class="canvas-help muted">drag: rotate · shift-drag / right-drag: pan · wheel: zoom · space: play/pause · ←/→: step</div>
+          </div>
+        </section>
+      </div>
+    </main>
+    <main id="tab-props" class="wide" hidden>
+      <div id="prp-layout">
+        <aside id="prp-types">
+          <input id="prp-filter" type="search" placeholder="Filter props… (e.g. door, garasu, bridge)" />
+          <div id="prp-type-list"></div>
+        </aside>
+        <aside id="prp-motions">
+          <div class="muted small" id="prp-motions-head">Motions</div>
+          <div id="prp-motion-list"></div>
+        </aside>
+        <section id="prp-view">
+          <div id="prp-toolbar">
+            <strong id="prp-title">Pick a prop</strong>
+            <span id="prp-info" class="muted"></span>
+            <span class="spacer"></span>
+            <button id="prp-play" class="small">❚❚ pause</button>
+            <input id="prp-frame" type="range" min="0" max="0" value="0" />
+            <span id="prp-frame-label" class="muted mono">0 / 0</span>
+            <label>speed <select id="prp-speed"><option value="1" selected>1×</option><option value="0.5">½×</option><option value="0.25">¼×</option><option value="0.1">⅒×</option></select></label>
+            <label><input id="prp-lit" type="checkbox" checked /> lighting</label>
+            <label><input id="prp-cull" type="checkbox" checked /> culling</label>
+            <button id="prp-reset" class="small secondary">reset view</button>
+          </div>
+          <div class="canvas-wrap"><canvas id="prp-canvas"></canvas>
+            <div class="canvas-help muted">drag: rotate · shift-drag / right-drag: pan · wheel: zoom · space: play/pause · ←/→: step · ★ = motion the game pairs with this prop</div>
           </div>
         </section>
       </div>

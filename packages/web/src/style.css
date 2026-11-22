@@ -121,3 +121,14 @@ main.wide { max-width: none; padding: 0 20px 20px; }
 .light-grid label { display: flex; flex-direction: column; gap: 1px; }
 .light-grid input[type=range] { width: 100%; }
 .light-grid label.inline { flex-direction: row; }
+
+/* Props tab (M7d) — same layout as Characters */
+#prp-layout { display: grid; grid-template-columns: 220px 220px 1fr; gap: 14px; height: calc(100vh - 190px); }
+#prp-types, #prp-motions { display: flex; flex-direction: column; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 8px; min-height: 0; }
+#prp-filter { padding: 6px 8px; background: var(--bg); color: var(--fg); border: 1px solid var(--line); border-radius: 6px; font: inherit; margin-bottom: 6px; }
+#prp-type-list, #prp-motion-list { overflow-y: auto; flex: 1; font-size: 13px; }
+#prp-view { margin: 0; display: flex; flex-direction: column; min-height: 0; padding: 8px 12px; }
+#prp-toolbar { display: flex; gap: 10px; align-items: center; padding-bottom: 8px; flex-wrap: wrap; }
+#prp-toolbar .spacer { flex: 1; }
+#prp-toolbar select { background: var(--bg); color: var(--fg); border: 1px solid var(--line); border-radius: 4px; }
+#prp-frame { width: 180px; }

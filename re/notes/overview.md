@@ -278,6 +278,46 @@ then re-analysis: **920 functions recovered, coverage 92 %** (3 261 functions de
   dialogue 3 = two lines, 420 frames, switching at 130 remaining. Port: `packages/formats/src/dialogue.ts`.
 - Open: sound id (e.g. 0x20000182) → WAV file mapping; which dialogue plays when = event script (M9).
 
+## Props (M7d)
+
+Port: `packages/formats/src/prop.ts`; viewer: Props tab.
+- **Skeletons:** `g_prop_skeletons` @004f7f0c (30 types). Root: +6 i16 child count, +8 PropNode*[].
+  PropNode: +0 i32 global model id, +4 i16 joint (1-based; < 1 = no transform and not drawn, though its
+  children are), +6 i16 child count, +8 PropNode*[]. **No rest offsets**: every joint's position comes
+  from the motion, relative to its parent. `g_prop_joint_counts` @004f7f84 holds n (frames hold n − 1
+  joints); `g_prop_interp_mode` @004f7fc0.
+- **Motion:** u32 stored-frame count, then frames of `(18n − 15) & ~3` = align4(18·(n − 1)) bytes:
+  (n − 1) × f32 xyz, then (n − 1) × i16 rx,ry,rz. Same `g_motion_frames` table and `mot/` files as
+  characters (mostly `komono*.bin`; some stored raw rather than LZ).
+- **Playback** (`prop_skel_draw` @00454680, `prop_joint_transform` @00454290): the object holds {type,
+  motion, f, prev} (+0x32C… in game objects); f ≥ F − 1 wraps to 0, f < 0 to F − 2.
+  - Mode 0: stored frame f.
+  - Modes 1 and 2: even f uses stored frame f/2. Odd f uses halfway between f/2 and f/2 + 1 (or frame 0
+    on the last frame when playing forward): position (b − a)·0.5 + a; angles a + trunc(wrap(b − a)/2).
+  - Mode 2: when all three angle deltas exceed 0x3000 (and f > 1), the exe blends rotation matrices with
+    FUN_00476550 (not ported yet; approximated by a quaternion slerp).
+  - Joint matrix: T(pos), then rotZ, rotY, rotX (premultiplying), × parent.
+  - Model 0x110B flickers (uniform scale (rand() % 11)·0.01 + 0.27).
+  - Game objects advance f by 1 or 2 per tick, depending on the object.
+- **Pairings** (`GAME_PROP_MOTIONS`): from object set-up code (literal type/motion stores) and
+  {type, motion, …} 12-byte records @005b5b10. A test checks that every pairing fits the layout exactly.
+- **Checked visually:** at frame 0 props are intact objects (barrels, gates, window panes, cell grate,
+  cabinets, chairs, pots, the full door #15). Glass #8 shatters into shards; door types #12–14 are
+  splinter debris.
+- **Open:**
+  - #16 `garasu` is mode 0 with its only fitting motion (506, 37 stored frames for F = 72): read
+    directly, the frames run past the end, so its owner probably steps or limits f differently.
+  - #29 (letter boxes + `komono_2`, n = 46): no motion fits.
+  - #4, #18, #21, #24: pairing not yet seen in code (the viewer uses the size match).
+  - The mode-2 matrix blend is not yet exact.
+- **Placement:** prop positions are small and local, so the owning game object places each prop (its
+  position, angles and when it starts). Those objects are spawned by the event script → M9.
+- **Cars** are not props. `FUN_004218f0` assembles one from parts: the body at the object's position and
+  angles, plus wheels at fixed offsets spinning +0x2000 per frame. Models: `car_pl` (0x8C1…, 0x8FC wheel),
+  `car_2` (0x1E4F…). A script record (+0x1394) gives a trigger time; at that time the car spawns an
+  explosion effect (FUN_00412010, effect 0x44/0x45) and sound, then animates a burning sequence of models
+  (0x1D71–0x1D98). Spawning and route come from events → M9.
+
 ## Skippable scenes & the "skip" sign (found while answering a user question)
 
 - The sign is not a string: it is **sprite 0x20F** → texture set `scr_common.bin` (set 0x164) texture 23,

@@ -169,3 +169,8 @@
 00a39668	data	g_evt_ptr	current event script pointer
 00a11a38	data	g_skippable	scene can be skipped (set by event opcode 0x2C)
 00a10c18	data	g_skip_pressed	Enter pressed during a skippable scene
+00454650	fn	prop_draw	draw a prop object {type, motion, f, prev} (normal)
+00454860	fn	prop_draw_alt	draw a prop object via FUN_004883c0 (alternate model draw)
+005b5b10	data	g_prop_spawn_defs	12-byte records: i16 prop type, i16 motion id, i16 ?, …
+004218f0	fn	car_task	car object: body + spinning wheels from parts; trigger time → explosion effect + burning model sequence
+00476550	fn	mtx_blend_rot	blend two rotation matrices (used by prop mode 2 for big turns)

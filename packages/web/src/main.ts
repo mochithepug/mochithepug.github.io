@@ -16,6 +16,7 @@ import { Previewer } from './audio';
 import { initTextures } from './textures';
 import { initModels, redrawModels } from './models';
 import { initCharacters, redraw as redrawCharacters } from './characters';
+import { initProps, redraw as redrawProps } from './propsview';
 import { initWords, redrawWords } from './wordsview';
 import { initStage, redraw as redrawStage } from './stageview';
 
@@ -56,6 +57,7 @@ async function load(fs: GameFS) {
     initTextures(fs).catch(showError);
     initModels(fs, params).catch(showError);
     initCharacters(fs, params).catch(showError);
+    initProps(fs, params).catch(showError);
     initWords(fs, params).catch(showError);
     initStage(fs, params).catch(showError);
   }
@@ -66,9 +68,10 @@ const params = new URLSearchParams(location.search);
 
 function showTab(name: string) {
   for (const t of document.querySelectorAll<HTMLButtonElement>('#tabs .tab')) t.classList.toggle('active', t.dataset.tab === name);
-  for (const id of ['files', 'textures', 'models', 'chars', 'words', 'stage']) $(`tab-${id}`).hidden = id !== name;
+  for (const id of ['files', 'textures', 'models', 'chars', 'props', 'words', 'stage']) $(`tab-${id}`).hidden = id !== name;
   if (name === 'models') redrawModels();
   if (name === 'chars') redrawCharacters();
+  if (name === 'props') redrawProps();
   if (name === 'words') redrawWords();
   if (name === 'stage') redrawStage();
 }
