@@ -34,3 +34,16 @@
 0058ff68	data	g_pvr_to_d3d_fmt	pixel format → D3D format index (5=1555, 2=565, 6=4444, 8=unsupported)
 005b9a80	data	g_palette_records	12-byte records {i16, i16 n=16, u32 ptr, i32 count}
 005eb868	data	g_cur_palette_bank	-1 = default bank 0
+004c0780	fn	model_draw	draw a model (pass arg: 0 = opaque now, translucent meshes deferred; 1 = translucent pass)
+004c0cd0	fn	model_draw_fade	same as model_draw for fading objects: alpha *= obj fade, TSP forced to alpha blend
+004c1180	fn	model_draw_deferred	translucent pass over deferred objects (ALPHABLENDENABLE on)
+004bfff0	fn	apply_pvr_state	mesh ISP/TSP words → D3D render/texture-stage states (cached by XOR with previous)
+004bda40	fn	draw_strip	DrawPrimitive(TRIANGLESTRIP, FVF 0x112, verts, n)
+004bdac0	fn	draw_list	DrawPrimitive(TRIANGLELIST, FVF 0x112, verts, n)
+005eb8c0	data	g_zfunc_table	PVR depth mode → D3DCMP
+005eb870	data	g_srcblend_table	PVR src blend → D3DBLEND
+005eb890	data	g_dstblend_table	PVR dst blend → D3DBLEND
+005eb8b0	data	g_address_table	(clamp<<1|flip) → D3DTADDRESS
+005eb8e0	data	g_cull_table	prim flags & 3 → D3DCULL
+004c2bb0	fn	light_setup_single	ambient + one directional light (D3DLIGHT7 @0087a6d0), lights 1-15 off
+004c3490	fn	light_setup_multi	ambient @0087ade0 + up to 16 lights @0087a760 (stride 0x68), enables @0087ae6c

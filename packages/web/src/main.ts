@@ -3,6 +3,7 @@ import {
   hasReadPermission,
   requestReadPermission,
   fsFromDirectoryHandle,
+  fsFromDevServer,
   fsFromFileList,
   loadHandle,
   pickDirectory,
@@ -13,6 +14,7 @@ import {
 import { buildReport, type CategoryReport, type Report, type Status } from './ingest/inventory';
 import { Previewer } from './audio';
 import { initTextures } from './textures';
+import { initModels, redrawModels } from './models';
 
 // --- tiny DOM helpers --------------------------------------------------------------------
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
@@ -47,15 +49,34 @@ async function load(fs: GameFS) {
   renderReport(fs, report);
   renderBrowser();
   $('tabs').hidden = false;
-  if (fs.has('Tod_e.exe')) initTextures(fs).catch(showError);
+  if (fs.has('Tod_e.exe')) {
+    initTextures(fs).catch(showError);
+    initModels(fs, params).catch(showError);
+  }
+  if (params.get('tab')) showTab(params.get('tab')!);
+}
+
+const params = new URLSearchParams(location.search);
+
+function showTab(name: string) {
+  for (const t of document.querySelectorAll<HTMLButtonElement>('#tabs .tab')) t.classList.toggle('active', t.dataset.tab === name);
+  for (const id of ['files', 'textures', 'models']) $(`tab-${id}`).hidden = id !== name;
+  if (name === 'models') redrawModels();
+}
+
+// Dev convenience: `npm run dev` with TTOTD_DIR set + `?dev` in the URL loads the folder directly.
+if (params.has('dev')) {
+  fsFromDevServer()
+    .then((fs) => {
+      if (fs) return load(fs);
+      $('busy').textContent = 'Dev data not available: start the dev server with TTOTD_DIR set.';
+    })
+    .catch(showError);
 }
 
 // --- tabs ------------------------------------------------------------------------------------
 for (const b of document.querySelectorAll<HTMLButtonElement>('#tabs .tab')) {
-  b.addEventListener('click', () => {
-    for (const t of document.querySelectorAll<HTMLButtonElement>('#tabs .tab')) t.classList.toggle('active', t === b);
-    for (const id of ['files', 'textures']) $(`tab-${id}`).hidden = id !== b.dataset.tab;
-  });
+  b.addEventListener('click', () => showTab(b.dataset.tab!));
 }
 
 async function loadFromHandle(h: FileSystemDirectoryHandle) {

@@ -89,6 +89,18 @@ export function fsFromFileList(list: FileList): GameFS {
   return new BaseFS(rootName, entries);
 }
 
+/** Dev-only: the game folder served by the Vite dev server when TTOTD_DIR is set (see vite.config.ts). */
+export async function fsFromDevServer(): Promise<GameFS | undefined> {
+  const r = await fetch('/__ttotd/list').catch(() => undefined);
+  if (!r?.ok || !(r.headers.get('content-type') ?? '').includes('json')) return undefined;
+  const list = (await r.json()) as { path: string; size: number }[];
+  return new BaseFS('TTOTD (dev server)', list.map((f) => ({
+    path: f.path,
+    size: f.size,
+    open: async () => new File([await (await fetch('/__ttotd/' + f.path.split('/').map(encodeURIComponent).join('/'))).blob()], f.path),
+  })));
+}
+
 // ---------------------------------------------------------------------------
 // Remember the picked folder between visits (Chromium only; handles are structured-cloneable).
 

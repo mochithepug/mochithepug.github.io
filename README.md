@@ -11,4 +11,7 @@ npm test             # unit tests (synthetic data only)
 TTOTD_DIR=~/Downloads/TTOTD npm test   # also check your own install
 ```
 
+For development, `TTOTD_DIR=~/Downloads/TTOTD npm run dev` and open `http://localhost:5173/?dev` to load the folder
+without the picker (dev server only; never part of a build).
+
 Chrome/Edge remember the folder between visits ("Reopen …"); Safari/Firefox ask each time.

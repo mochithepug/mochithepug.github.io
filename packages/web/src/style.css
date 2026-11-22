@@ -51,3 +51,17 @@ main.wide { max-width: none; padding: 0 20px 20px; }
 .tex.checker canvas { background: repeating-conic-gradient(#3a3a40 0% 25%, #2a2a2e 0% 50%) 0 0 / 16px 16px; }
 .tex .warn { color: var(--warn); }
 .tex .err { color: var(--err); }
+
+/* --- model viewer ---------------------------------------------------------------------- */
+#mdl-layout { display: grid; grid-template-columns: 220px 150px 1fr; gap: 14px; height: calc(100vh - 190px); }
+#mdl-files, #mdl-models { display: flex; flex-direction: column; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 8px; min-height: 0; }
+#mdl-filter { padding: 6px 8px; background: var(--bg); color: var(--fg); border: 1px solid var(--line); border-radius: 6px; font: inherit; margin-bottom: 6px; }
+#mdl-file-list, #mdl-model-list { overflow-y: auto; flex: 1; font-size: 13px; }
+.small { font-size: 12px; margin-bottom: 6px; }
+#mdl-view { margin: 0; display: flex; flex-direction: column; min-height: 0; padding: 8px 12px; }
+#mdl-toolbar { display: flex; gap: 12px; align-items: center; padding-bottom: 8px; flex-wrap: wrap; }
+#mdl-toolbar .spacer { flex: 1; }
+#mdl-toolbar select { background: var(--bg); color: var(--fg); border: 1px solid var(--line); border-radius: 4px; max-width: 160px; }
+#mdl-canvas-wrap { position: relative; flex: 1; min-height: 0; }
+#mdl-canvas { width: 100%; height: 100%; display: block; border-radius: 6px; cursor: grab; }
+#mdl-help { position: absolute; left: 10px; bottom: 8px; font-size: 11px; pointer-events: none; }

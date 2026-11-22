@@ -20,6 +20,7 @@
     <nav id="tabs" hidden>
       <button data-tab="files" class="tab active">Files</button>
       <button data-tab="textures" class="tab">Textures</button>
+      <button data-tab="models" class="tab">Models</button>
     </nav>
     <main id="tab-files">
       <section id="report" hidden></section>
@@ -46,6 +47,33 @@
             <label><input id="tex-alpha" type="checkbox" checked /> show transparency</label>
           </div>
           <div id="tex-grid"></div>
+        </section>
+      </div>
+    </main>
+    <main id="tab-models" class="wide" hidden>
+      <div id="mdl-layout">
+        <aside id="mdl-files">
+          <input id="mdl-filter" type="search" placeholder="Filter files… (e.g. zom, boss, st1)" />
+          <div id="mdl-file-list"></div>
+        </aside>
+        <aside id="mdl-models">
+          <div class="muted small" id="mdl-models-head">Models</div>
+          <div id="mdl-model-list"></div>
+        </aside>
+        <section id="mdl-view">
+          <div id="mdl-toolbar">
+            <strong id="mdl-title">Pick a model file</strong>
+            <span id="mdl-info" class="muted"></span>
+            <span class="spacer"></span>
+            <label>Textures <select id="mdl-texset"></select></label>
+            <label title="Draw every model of the file at once (stage files place their pieces in world space)"><input id="mdl-all" type="checkbox" /> all models</label>
+            <label><input id="mdl-lit" type="checkbox" checked /> lighting</label>
+            <label title="Back-face culling as the game sets it"><input id="mdl-cull" type="checkbox" checked /> culling</label>
+            <button id="mdl-reset" class="small secondary">reset view</button>
+          </div>
+          <div id="mdl-canvas-wrap"><canvas id="mdl-canvas"></canvas>
+            <div id="mdl-help" class="muted">drag: rotate · shift-drag / right-drag: pan · wheel: zoom</div>
+          </div>
         </section>
       </div>
     </main>

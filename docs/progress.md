@@ -8,6 +8,7 @@ Plan and checklist: [goal.md](../goal.md). Reverse-engineering findings: [re/not
 ```sh
 npm install
 npm run dev                                   # http://localhost:5173 → "Open game folder…" → ~/Downloads/TTOTD
+TTOTD_DIR=~/Downloads/TTOTD npm run dev       # dev only: http://localhost:5173/?dev loads the folder without the picker
 TTOTD_DIR=~/Downloads/TTOTD npm test          # unit tests + checks against your own install
 npm run typecheck
 node --experimental-strip-types tools/unpack.ts ~/Downloads/TTOTD [--out dumps]   # classify/unpack pol+tex
@@ -104,3 +105,29 @@ contact sheets; user confirmed textures look good.
 
 **Issue fixed:** Node's type stripping rejected `const enum` and constructor parameter properties →
 removed and `erasableSyntaxOnly` turned on.
+
+## M4 — Static model viewer ✅ (2026-11-22)
+
+**Delivered:** `packages/formats/src/pol.ts` (model table + model/mesh/primitive parser with reference
+resolution), `renderstate.ts` (PVR words → D3D render state, tables from the exe);
+`packages/web/src/gl/mat.ts` (D3D-style matrices), `gl/renderer.ts` (WebGL2 emulation of the D3D7
+fixed-function setup: modulate, alpha test, blend factors, depth funcs, culling, wrap/mirror/clamp,
+opaque-then-translucent passes); Models tab (file list, model list, orbit camera, texture-set picker,
+all-models / lighting / culling toggles). Dev-only data endpoint in `packages/web/vite.config.ts`.
+
+**Verified:** all 355 model files / 10 022 models parse with every mesh's size field matching exactly
+(test); texture indices of all 43 563 textured meshes fall inside their same-named set; render-state
+tables match the exe (test); unit tests for the parser and state mapping; headless-Chrome screenshots
+of Stage 1 (`st1_01`, upright tower, arched windows, solid walls), a zombie (`zsass`) and James's head
+(`player1` #1) look correct. User confirmed the viewer renders models well.
+
+**Findings:** see re/notes/overview.md "Models". Notably: the texture index is local to the same-named
+tex set; 23 pol files have empty tex sets and borrow another set (viewer guesses by name prefix).
+
+**Q&A worth keeping:** heads "missing" in the all-models view are expected — every part is stored
+around its own joint, so without the skeleton the head sits inside the torso (player1 head y −0.79..1.65,
+torso y 0..5.03). Culling = skip triangles seen from their back side (decided per triangle per frame by
+on-screen winding); a street seen from below disappears because only its top was modelled.
+
+**Known limits (by design, later milestones):** lighting is an approximation (exact lights/fog later);
+character parts are unassembled until the skeleton (M5); flat shading drawn smooth.

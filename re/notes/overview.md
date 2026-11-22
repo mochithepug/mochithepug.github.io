@@ -107,6 +107,41 @@ inlined. `stub` = empty/4-byte placeholders. `bmp` = `scr_etc000-002` (512×512 
 Port: `packages/formats/src/pvr.ts`, `texsets.ts`; checks in `test/pvr.test.ts`, `test/textures.test.ts`
 (all 11 913 textures decode).
 
+## Models (M4)
+
+- `pol` file: table of `(offset, offset)` u32 pairs (one per model), terminated by `(fileSize, 0)`,
+  zero padding up to the first model. Raw stage files use the same format uncompressed.
+  355 files, 10 022 models, 44 817 meshes, 2 080 932 vertices — all parse.
+- Model: 0x18-byte header `{u32 ?, u32 flags, f32 centre xyz, f32 radius}`, then chunks until a word
+  whose low 31 bits are 0 (`model_draw` compares it as a float with 0.0). Flags seen: 1, 3, 5, 7.
+  Flag 0x10 would select a 14-float vertex format; unused.
+- Mesh header (bit 31 set), 20 words: `[0..3]` PVR PCW/ISP/TSP/TCW · `[4..7]` bounding sphere (used
+  for culling via ComputeSphereVisibility) · `[8]` texture index into the **same-named tex set's**
+  descriptor list (-1 = none; `tex_register_model` patches it to `id | 0x40000000` in memory, and
+  `model_draw` indexes the slot table with it ×4, which wraps back to `id`) · `[9]` specular exponent n
+  (power `1 << n`) · `[10]` ambient scale · `[11]` alpha · `[12..14]` RGB · `[16..18]` specular RGB ·
+  `[19]` byte size of the primitive chunks that follow (verified exact for every mesh).
+- Primitive chunk: `u32 flags, u32 count`, vertices `x y z nx ny nz u v` (FVF 0x112).
+  `flags & 8` list (count = triangles) else strip · `flags & 0x80` clear → set cull (`& 3` via
+  `g_cull_table`: 0,1 none, 2 CCW, 3 CW) and shade mode (`& 0x40` Gouraud) · `flags & 0x20` → each
+  vertex is inline (x has bit 0 set) or a reference `{marker, i32 byte offset from the end of the ref}`.
+  With MIRROR addressing and a device-caps bit clear, the reference path folds UVs into [-1, 1]
+  in software (`u' = ±1 − frac(u)`); assumed inactive on modern hardware — open question.
+- Render state (`apply_pvr_state`): ISP 31-29 → ZFUNC (inverted, DC depth is 1/w), ISP 26 → no Z write,
+  TSP 31-29/28-26 → SRC/DESTBLEND, TSP 23 → fog off, TSP 20-19 → alpha test (and opaque vs translucent
+  pass), TSP 18/16 & 17/15 → ADDRESSU/V (flip → mirror, clamp → clamp), TSP 14-13 → point/linear,
+  TSP 7-6 → alpha op (mode 1 SELECTARG1, else MODULATE); colour op always MODULATE.
+  Global: ALPHAREF 1, ALPHAFUNC GREATEREQUAL, SPECULARENABLE, DITHERENABLE.
+- Drawing: opaque meshes (`(TSP & 0x180000) == 0x80000`) are drawn immediately with blending off;
+  others are deferred to `model_draw_deferred` (blending on). `model_draw_fade` (object flag
+  0x20000000) multiplies alpha by the object's fade value and forces SRCALPHA/INVSRCALPHA.
+- Texture orientation: with texel rows uploaded unchanged and the original UVs, everything renders
+  upright (checked on Stage 1 buildings, a player face) — confirms the bottom-up storage finding.
+- Character files hold body parts in local coordinates (assembled by the skeleton in M5); stage files
+  are already in world space.
+
+Port: `packages/formats/src/pol.ts`, `renderstate.ts`; WebGL2 renderer `packages/web/src/gl/`.
+
 ## How these claims are checked
 
 `packages/formats/test/notes.test.ts` re-checks the notes against the user's own install
@@ -119,3 +154,10 @@ size limits, evt pointer targets. LZ claims are covered by `real-data.test.ts`.
 - What enables the fixed RNG seed (`FUN_0047ed90`) and where `g_rng_counter` advances.
 - `myth.acm` / `mythxpak.exe` (installer unpacker; `myth.acm` not referenced by name in the exe).
 - Settings INI name/keys (`read_ini` @004be890).
+- Software UV mirror fold in `model_draw` — which device-caps bit (`DAT_00849128 & 2`) enables it.
+- Lighting: `light_setup_single` @004c2bb0 sets D3DRS_AMBIENT (0x8B) from three floats and one
+  D3DLIGHT7 @0087a6d0 (direction/colours from globals @0087a740.., scaled by constants @004f100c,
+  @004dd4a8), enables light 0, disables 1–15. `light_setup_multi` @004c3490 (object flag 0x4000000)
+  sets ambient from @0087ade0 and up to 16 D3DLIGHT7s from @0087a760 (stride 0x68), enabled per
+  flag @0087ae6c. Open: who writes these values (per stage / event) — trace in M7. Fog render
+  states (FOGCOLOR 0x22, FOGSTART/END 0x24/0x25) are set around @004c4xxx — also M7.

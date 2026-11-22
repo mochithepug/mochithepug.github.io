@@ -84,14 +84,15 @@ Each milestone: **deliverable → how you verify**.
 - [x] **M3 — Texture viewer.** Decode pixel formats (16-bit / possible twiddled/VQ), browse all
   textures in the browser.
   → Textures look correct (zombies, stage walls, UI).
-- [ ] **M4 — Static model viewer.** Decode `pol/` meshes, render textured in WebGL2 with orbit camera.
+- [x] **M4 — Static model viewer.** Decode `pol/` meshes, render textured in WebGL2 with orbit camera.
   → Recognisable characters and stage pieces.
 - [ ] **M5 — Hierarchy + animation.** Node hierarchy and `mot/` playback.
   → Zombies walk/attack in the viewer.
 - [ ] **M6 — Font + word lists.** Decode `font.bin` and `word/` lists; browsable word list viewer
   rendered with the original font.
   → Words and font match what you see in-game.
-- [ ] **M7 — Stage fly-through.** Stage geometry + `cam/` rail playback for Stage 1.
+- [ ] **M7 — Stage fly-through.** Stage geometry + `cam/` rail playback for Stage 1, with the game's exact
+  lighting (D3D7 per-vertex lighting + the game's light/ambient values) and fog.
   → Camera path matches the Stage 1 route.
 - [ ] **M8 — Typing core.** Typing range: words appear, input matching, mistakes, scoring —
   ported from the exe.
