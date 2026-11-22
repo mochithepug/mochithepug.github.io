@@ -16,3 +16,6 @@ dumps/
 # Ghidra project + decompiler output are derived from the game binary
 re/ghidra-project/
 re/out/
+
+# Reference screenshots/videos of the original game (user-provided)
+gameplay/

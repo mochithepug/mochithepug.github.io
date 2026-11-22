@@ -102,3 +102,13 @@ export function rotateZLocal(m: Mat4, a: number): Mat4 {
   }
   return o;
 }
+
+/** D3DXMatrixOrthoOffCenterLH (z → [0, 1]). */
+export function orthoOffCenterLH(l: number, r: number, b: number, t: number, zn: number, zf: number): Mat4 {
+  return new Float32Array([
+    2 / (r - l), 0, 0, 0,
+    0, 2 / (t - b), 0, 0,
+    0, 0, 1 / (zf - zn), 0,
+    (l + r) / (l - r), (t + b) / (b - t), zn / (zn - zf), 1,
+  ]);
+}

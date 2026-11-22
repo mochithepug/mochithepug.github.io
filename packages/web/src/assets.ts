@@ -58,17 +58,21 @@ export class Assets {
     return p;
   }
 
-  /** Lazily decoded textures of `tex/<name>`, or undefined if the set has none. */
-  textures(name: string): Promise<TextureSource | undefined> {
-    let p = this.tex.get(name.toLowerCase());
+  /**
+   * Lazily decoded textures of `tex/<name>`, or undefined if the set has none.
+   * `forModels`: textures used by models take palette bank 0 (see paletteBankFor).
+   */
+  textures(name: string, forModels = true): Promise<TextureSource | undefined> {
+    const key = `${name.toLowerCase()}|${forModels}`;
+    let p = this.tex.get(key);
     if (!p) {
-      p = this.loadTextures(name);
-      this.tex.set(name.toLowerCase(), p);
+      p = this.loadTextures(name, forModels);
+      this.tex.set(key, p);
     }
     return p;
   }
 
-  private async loadTextures(name: string): Promise<TextureSource | undefined> {
+  private async loadTextures(name: string, forModels: boolean): Promise<TextureSource | undefined> {
     const set = this.sets.find((s) => s.name.toLowerCase() === name.toLowerCase());
     const path = `tex/${name}`;
     if (!set || !set.textures.length || !this.fs.has(path)) return undefined;
@@ -76,14 +80,14 @@ export class Assets {
     const decoded = new Map<number, ReturnType<TextureSource['get']>>();
     const { pe, palettes } = this;
     return {
-      key: set.name,
+      key: `${set.name}|${forModels}`,
       get(i) {
         if (decoded.has(i)) return decoded.get(i);
         const t = set.textures[i];
         let out: ReturnType<TextureSource['get']>;
         if (t) {
           try {
-            const d = decodeTexels(t, data, palettes[paletteBankFor(pe, set, i)]);
+            const d = decodeTexels(t, data, palettes[paletteBankFor(pe, set, i, forModels)]);
             out = { width: t.width, height: t.height, rgba: texelsToRgba(d.texels, d.format) };
           } catch {
             out = undefined;

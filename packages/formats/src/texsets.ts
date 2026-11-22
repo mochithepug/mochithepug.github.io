@@ -108,9 +108,15 @@ export function paletteBankFn(pe: PeImage, set: number, i: number): number {
   return h(pe, i);
 }
 
-/** Palette RAM bank used for texture i of a set loaded with load_tex_set. */
-export function paletteBankFor(pe: PeImage, set: TextureSet, i: number): number {
-  if (set.name.toLowerCase() === 'common.bin') return 0;
+/**
+ * Palette RAM bank for texture i of a set.
+ * - Loaded by set number (`load_tex_set`, 2D screen sets): `tex_palette_bank(set, i) + 1`, or bank 0
+ *   if that exceeds 0x3F.
+ * - Loaded for models (`tex_register_model`: common.bin, characters, scenery, the typing letters):
+ *   the current-bank global stays at its default −1, i.e. **bank 0**.
+ */
+export function paletteBankFor(pe: PeImage, set: TextureSet, i: number, loadedForModels = false): number {
+  if (loadedForModels || set.name.toLowerCase() === 'common.bin') return 0;
   const b = paletteBankFn(pe, set.index, i) + 1;
   return b > 0x3f || b < 0 ? 0 : b;
 }

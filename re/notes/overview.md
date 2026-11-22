@@ -177,6 +177,34 @@ then re-analysis: **920 functions recovered, coverage 92 %** (3 261 functions de
   needed for the stage scenery in M7.
 - Matrix stack: `mtx_push/pop/translate/rotx/roty/rotz/identity` (@004c2100…), each premultiplying.
 
+## Words & font (M6)
+
+- **Word lists** `word/Z*.bin` (488, names @004f3bc8): XOR 0x41, then 12-byte records
+  `{i32 value, u32 textOffset, u32 codeOffset}` until low 16 bits of value = 0xFFFF (offsets relocated
+  by `word_list_relocate`). text = ASCII word; codes = same word in the game's 1-byte charset
+  (0–9 → A2–AB, A–Z → AC–C5, a–z → C6–DF, punctuation E3–F8) — verified for all 14 061 words.
+  `value` meaning unknown (Z000L040: all 40; Z000L010: 4…19).
+- **Typing letters on screen are NOT from font.bin.** Each character is a textured quad model
+  (`g_letter_models[ascii]` → `pol/tod_boxetc.bin` #14–#134; space has no model and only advances),
+  texture #0 of `tex/tod_boxetc` = 256×256 4-bit atlas, **palette bank 0** (model-path textures — see
+  below). Mesh: SRCALPHA/INVSRCALPHA, alpha = texture alpha only, point sampling.
+- **Layout** (`word_draw_title` → `word_draw_line` → `word_draw_letter`): x0 = x + (adv(first)/2 −
+  width/2)·size·0.75, y −= 0.4·size; per char x −= left·size·0.75, draw quad (x ±0.38·size, height
+  1.0·size for word lines), x += adv·size·0.75; g/p/q/y −0.2·size, j −0.1·size. Metrics: Ａ–Ｚ 0.9, most
+  lowercase 0.8, i/l 0.6, j 0.65, r 0.7, m/w 0.9; left 0.2 for I/i/j/l, −0.1 for m; space 0.4.
+  Colours: word line (1,1,0) yellow, player lines (1,1,1) white; typed characters are skipped but keep
+  their space (so the remainder stays right-aligned).
+- **Verified against the user's 640×480 boss screenshot**: rendering with the exact letter quads and
+  fitting only size/position gives pixel overlap 0.80 (Mercury) and 0.85 (Hydrogen) at the **same size,
+  23.75 px**; Dogma's letters match too (its score is lowered by the box border in the crop).
+- **font.bin** = Japanese system font (menus, name entry…): 7 807 glyphs, 24×24, 2 bpp, index table
+  `g_font_glyph_index[sjis]` (glyph = font + 0x10 + idx·0x20, 160-byte slots). Character textures are
+  32×32 ARGB1555 with the glyph at (2,2): shade v → grey `(0x55,0xAA,0xFF)[v−1] & 0x1F` (21,10,31 — the
+  middle shade is darker, exe quirk) plus a 1-px black outline (8 neighbours).
+- **Palette bank rule (correction to M3)**: textures registered for models (`tex_register_model`) use
+  bank 0 — the per-set switch only applies to 2D sets loaded with `load_tex_set`. The M3 viewer had shown
+  model sets' 4-bit textures with the 2D rule (e.g. the letter atlas looked hollow); fixed.
+
 ## How these claims are checked
 
 `packages/formats/test/notes.test.ts` re-checks the notes against the user's own install

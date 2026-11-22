@@ -155,3 +155,24 @@ textures (player1 tex #33 round disc lid, #38 four controller ports); the yellow
 
 **Known limits:** the viewer can't know which motions belong to which character (game logic decides);
 wrong pairings may show gaps. Head/face variants and motion cross-fades not applied yet.
+
+## M6 — Font & word lists ✅ (2026-11-22)
+
+**Delivered:** `packages/formats/src/words.ts` (word-list decoder, charset ↔ SJIS, exe letter metrics,
+letter model lookup, exact `layoutWordLine`), `font.ts` (font.bin glyphs + the exe's character
+textures), `d3dmath.orthoOffCenterLH`; renderer colour override; palette-bank rule fix
+(`paletteBankFor(..., loadedForModels)`); **Words** tab (488 lists, search across all words, preview with
+the game's letter models: yellow word line, white player line with a "typed" slider, size; Japanese font
+browser). `gameplay/` (user's reference screenshots) added to .gitignore.
+
+**Verified:** 488 lists / 14 061 words decode; every word's codes equal its text in the game charset;
+every character has a letter model (space excepted, by design); font has 7 807 reachable glyphs; width
+tables spot-checked (tests). Pixel comparison with the user's 640×480 boss screenshot: IoU 0.80 / 0.85 at
+one consistent size (23.75 px). Words tab renders "Ping-pong" (8 typed) and "Sweet pea" (7 typed) like
+the user's screenshots. User confirmed all four checks (word previews, other lists, Japanese font, letter atlas).
+
+**Findings:** on-screen letters are textured quad models, not font.bin; font.bin is the Japanese system
+font; palette bank 0 for model textures (M3 correction). User keyboard: US.
+
+**Known limits:** box frame is a placeholder; line spacing (34 px) is measured, not yet from code — both
+come with the typing milestone (M8).

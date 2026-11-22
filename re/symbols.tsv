@@ -87,3 +87,26 @@
 004f7fc0	data	g_prop_interp_mode	u8[30]
 00a11d60	data	g_motion_ptrs	{ptr, state}[motionId]
 00a14fc0	data	g_model_slots	16-byte entries per global model id
+004b41e0	fn	word_list_relocate	add buffer address to each record's two offsets (12-byte records, until 0xFFFF)
+00453a70	fn	font_glyph_ptr	SJIS → font + 0x10 + g_font_glyph_index[sjis] * 0x20 (0x8140..0xEAA4)
+00453ab0	fn	font_char_texture	render a SJIS string's glyph into a 32x32 ARGB1555 texture slot (2,2)
+00453c90	fn	font_blit_glyph	24x24 2bpp glyph → shades 0x55/0xAA/0xFF & 0x1F + 8-neighbour alpha outline
+00453dd0	fn	font_char_texture_1	one character (1 or 2 bytes) → font_char_texture
+00402e90	fn	code_to_sjis	game 1-byte charset (0x51..0xF8) → SJIS via table @00595714
+00402ed0	fn	code_to_sjis_alt	same, with an alternative table @004dd348 for codes < 0xE0 when flagged
+004b0a50	fn	char_metric	(advance, left) for a SJIS char: Ａ–ｚ tables, space/punct 0.4, else 0.9
+004b0b20	fn	word_width	left(first) + Σ(adv − left)
+004b0b80	fn	word_center_offset	adv(first)/2 − width/2
+004b0890	fn	word_draw_line	draw one word line; skips the first N (typed) characters but keeps spacing
+004b1030	fn	word_draw_title	position + draw the yellow word line (height factor 1.0)
+004b0ff0	fn	word_line_params	line y offset by line index, height factor 0.65
+004b2530	fn	word_draw_letter	letter = model g_letter_models[ascii]; scale size*0.1; descenders; colour (1,1,0)/(1,1,1)
+004b2a30	fn	word_box_update	per word box: targeting, completion (typing logic — M8)
+00597bb8	data	g_font_glyph_index	u16[sjis] glyph index (0 = none)
+00595710	data	g_charset_sjis	ptr to u16 SJIS per game char code (0x51..0xF8)
+005ea80c	data	g_letter_advance	f32 per full-width letter (sjis − 0x8260)
+005ea8f8	data	g_letter_left	f32 per full-width letter
+0058efa8	data	g_letter_models	u16 model id per ASCII char (tod_boxetc.bin)
+004f3bc8	data	g_word_list_names	char*[] word\Z*.bin
+004f4414	data	g_outline_dx	i8[8]
+004f441c	data	g_outline_dy	i8[8]

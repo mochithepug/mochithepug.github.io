@@ -88,7 +88,7 @@ Each milestone: **deliverable → how you verify**.
   → Recognisable characters and stage pieces.
 - [x] **M5 — Hierarchy + animation.** Node hierarchy and `mot/` playback.
   → Zombies walk/attack in the viewer.
-- [ ] **M6 — Font + word lists.** Decode `font.bin` and `word/` lists; browsable word list viewer
+- [x] **M6 — Font + word lists.** Decode `font.bin` and `word/` lists; browsable word list viewer
   rendered with the original font.
   → Words and font match what you see in-game.
 - [ ] **M7 — Stage fly-through.** Stage geometry + `cam/` rail playback for Stage 1, with the game's exact

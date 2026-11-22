@@ -22,6 +22,7 @@
       <button data-tab="textures" class="tab">Textures</button>
       <button data-tab="models" class="tab">Models</button>
       <button data-tab="chars" class="tab">Characters</button>
+      <button data-tab="words" class="tab">Words</button>
     </nav>
     <main id="tab-files">
       <section id="report" hidden></section>
@@ -105,6 +106,35 @@
           <div class="canvas-wrap"><canvas id="chr-canvas"></canvas>
             <div class="canvas-help muted">drag: rotate · shift-drag / right-drag: pan · wheel: zoom · space: play/pause · ←/→: step</div>
           </div>
+        </section>
+      </div>
+    </main>
+    <main id="tab-words" class="wide" hidden>
+      <div id="wrd-layout">
+        <aside id="wrd-lists">
+          <input id="wrd-filter" type="search" placeholder="Search all words…" />
+          <div class="muted small" id="wrd-lists-head">Word lists</div>
+          <div id="wrd-list-list"></div>
+        </aside>
+        <aside id="wrd-words">
+          <div class="muted small" id="wrd-words-head">Words</div>
+          <div id="wrd-word-list"></div>
+        </aside>
+        <section id="wrd-view">
+          <div id="wrd-toolbar">
+            <strong id="wrd-title">Pick a word</strong>
+            <span class="spacer"></span>
+            <label>typed <input id="wrd-typed" type="range" min="0" max="0" value="0" /></label>
+            <span id="wrd-typed-label" class="muted mono">0</span>
+            <label>size <input id="wrd-size" type="number" value="23.75" step="0.25" min="8" max="64" /> px</label>
+          </div>
+          <div id="wrd-stage"><canvas id="wrd-canvas"></canvas><div id="wrd-box"></div></div>
+          <p class="muted small">Letters are the game's own letter models (<code>pol/tod_boxetc.bin</code>, texture atlas palette bank 0), laid out with the exe's per-letter widths; colours yellow (1,1,0) / white. Size 23.75 px matches the 640×480 boss screenshot. The box frame here is a placeholder — the real frame models come with typing (M8).</p>
+          <div id="wrd-font-head"><strong>Japanese system font</strong> <span class="muted">word/font.bin — 7 807 glyphs, 24×24, 2-bit (menus, name entry)</span>
+            <select id="wrd-font-block">
+              <option value="829f">Hiragana</option><option value="8340">Katakana</option><option value="8260">Full-width Latin</option><option value="889f">Kanji (first 240)</option><option value="8140">Symbols</option>
+            </select></div>
+          <canvas id="wrd-font"></canvas>
         </section>
       </div>
     </main>

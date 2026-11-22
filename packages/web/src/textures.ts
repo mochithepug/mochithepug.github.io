@@ -100,6 +100,8 @@ async function showSet(set: TextureSet) {
   const file = new Uint8Array(await state.fs.read(path));
   if (token !== state.token) return; // user moved on
   const { kind, data } = classifyBin(path.toLowerCase(), file);
+  // Sets with a same-named model file are loaded for models → palette bank 0 (see paletteBankFor).
+  const forModels = state.fs.has(`pol/${set.name}`) && (state.fs.files.find((f) => f.key === `pol/${set.name}`.toLowerCase())?.size ?? 0) >= 32;
   const alpha = $<HTMLInputElement>('tex-alpha').checked;
   const flip = $<HTMLInputElement>('tex-flip').checked;
 
@@ -111,7 +113,7 @@ async function showSet(set: TextureSet) {
     canvas.width = t.width;
     canvas.height = t.height;
     const label = document.createElement('div');
-    const bank = paletteBankFor(state!.pe, set, i);
+    const bank = paletteBankFor(state!.pe, set, i, forModels);
     const lay = layoutOf(t.type);
     label.textContent = `#${i} · ${t.width}×${t.height} · ${LAYOUT_NAMES[lay] ?? lay.toString(16)} ${FORMAT_NAMES[formatOf(t.type)]}${lay === 0x500 ? ` · pal ${bank}` : ''} · id ${t.id}`;
     try {
@@ -140,7 +142,8 @@ async function showSet(set: TextureSet) {
   applyZoom();
   $('tex-info').textContent =
     `${set.textures.length} textures · ${kind === 'lz' ? 'compressed' : kind} file · ${(file.length / 1024).toFixed(0)} KB` +
-    (overruns ? ` · ${overruns} with read-past quirk` : '');
+    (overruns ? ` · ${overruns} with read-past quirk` : '') +
+    (set.textures.some((t) => (t.type & 0xff00) === 0x500) ? (forModels ? ' · palette bank 0 (model set)' : ' · palette per set (2D set)') : '');
 }
 
 /** Display helper only: the decoder output stays in the exe's memory order (row 0 first). */

@@ -114,7 +114,7 @@ async function textureSource(name: string): Promise<TextureSource | undefined> {
       let out: ReturnType<TextureSource['get']>;
       if (t) {
         try {
-          const d = decodeTexels(t, data, palettes[paletteBankFor(pe, set, i)]);
+          const d = decodeTexels(t, data, palettes[paletteBankFor(pe, set, i, true)]);
           out = { width: t.width, height: t.height, rgba: texelsToRgba(d.texels, d.format) };
         } catch {
           out = undefined;

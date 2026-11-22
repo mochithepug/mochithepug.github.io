@@ -92,6 +92,8 @@ export interface DrawOptions {
   lit: boolean;
   culling: boolean;
   lightDir: [number, number, number];
+  /** Replace every mesh's material colour (the exe's per-model colour override, FUN_00489140). */
+  colorOverride?: [number, number, number];
 }
 
 export class Renderer {
@@ -246,7 +248,7 @@ export class Renderer {
         gl.uniform1i(this.u.uHasTex!, tex ? 1 : 0);
         gl.uniform1i(this.u.uAlphaSelect!, s.alphaOp === 2 ? 1 : 0);
         gl.uniform1i(this.u.uAlphaTest!, s.alphaTest ? 1 : 0);
-        gl.uniform3fv(this.u.uColor!, m.color);
+        gl.uniform3fv(this.u.uColor!, o.colorOverride ?? m.color);
         gl.uniform1f(this.u.uAlpha!, m.alpha);
         gl.uniform1f(this.u.uAmbientScale!, m.ambientScale);
         gl.uniform3fv(this.u.uSpecular!, m.specular);

@@ -8,3 +8,5 @@ export * from './pol.ts';
 export * from './renderstate.ts';
 export * from './d3dmath.ts';
 export * from './character.ts';
+export * from './font.ts';
+export * from './words.ts';
