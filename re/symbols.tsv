@@ -110,3 +110,11 @@
 004f3bc8	data	g_word_list_names	char*[] word\Z*.bin
 004f4414	data	g_outline_dx	i8[8]
 004f441c	data	g_outline_dy	i8[8]
+004960a0	fn	load_queue_run	run the current step of load request (type → dispatcher table @005e98f0)
+004960d0	fn	load_request_model	queue a single-model load by global model id (type 0/1, raw: per-model read)
+00496150	fn	load_request_file	queue a whole pol file by file index (type 3, LZ-decompressed)
+00488930	fn	load_model_dispatch	steps @005b9d6c: pol_load_model_slot (raw read at the model's offset) → textures
+00488d60	fn	load_file_dispatch	steps @005b9d74: read pol → decompress → read tex → decompress → register
+00497680	fn	mode_init_example	a mode set-up queuing model/file/texture loads (DAT_00a10c08 = 10)
+00838d10	data	g_load_queue	64 × 16-byte requests {type, ?, id, state}
+005e98f0	data	g_load_dispatch	load request type → dispatcher

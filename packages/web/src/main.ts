@@ -17,6 +17,7 @@ import { initTextures } from './textures';
 import { initModels, redrawModels } from './models';
 import { initCharacters, redraw as redrawCharacters } from './characters';
 import { initWords, redrawWords } from './wordsview';
+import { initStage, redraw as redrawStage } from './stageview';
 
 // --- tiny DOM helpers --------------------------------------------------------------------
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
@@ -56,6 +57,7 @@ async function load(fs: GameFS) {
     initModels(fs, params).catch(showError);
     initCharacters(fs, params).catch(showError);
     initWords(fs, params).catch(showError);
+    initStage(fs, params).catch(showError);
   }
   if (params.get('tab')) showTab(params.get('tab')!);
 }
@@ -64,10 +66,11 @@ const params = new URLSearchParams(location.search);
 
 function showTab(name: string) {
   for (const t of document.querySelectorAll<HTMLButtonElement>('#tabs .tab')) t.classList.toggle('active', t.dataset.tab === name);
-  for (const id of ['files', 'textures', 'models', 'chars', 'words']) $(`tab-${id}`).hidden = id !== name;
+  for (const id of ['files', 'textures', 'models', 'chars', 'words', 'stage']) $(`tab-${id}`).hidden = id !== name;
   if (name === 'models') redrawModels();
   if (name === 'chars') redrawCharacters();
   if (name === 'words') redrawWords();
+  if (name === 'stage') redrawStage();
 }
 
 // Dev convenience: `npm run dev` with TTOTD_DIR set + `?dev` in the URL loads the folder directly.

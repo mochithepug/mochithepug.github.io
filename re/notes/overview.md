@@ -205,6 +205,18 @@ then re-analysis: **920 functions recovered, coverage 92 %** (3 261 functions de
   bank 0 — the per-set switch only applies to 2D sets loaded with `load_tex_set`. The M3 viewer had shown
   model sets' 4-bit textures with the 2D rule (e.g. the letter atlas looked hollow); fixed.
 
+## Stage geometry & loading (M7a)
+
+- Loads go through a 64-entry request queue `g_load_queue` (16-byte requests), dispatched by type
+  (`g_load_dispatch` @005e98f0). `load_request_model(id)` (type 0/1) loads **one model** by global id with
+  a raw read at its offset in the pol file (no decompression) — this is how the sector-aligned **raw stage
+  files** are used; `load_request_file(fileIndex)` (type 3) loads a whole LZ pol file + its tex set.
+- Stage 1 geometry: `st1_01/03/04/05` and their `b`/`c` parts each cover a different area of one world-space
+  scene and meet seamlessly; `st1_02` is small and inside `st1_01`'s area (likely an interior);
+  `st1_1`/`st1_1b` are a huge backdrop (sky dome + several concentric rings of city wall — probably
+  variants shown one at a time); `etc_1_*` are small local-space objects placed at runtime.
+- Open: which pieces / backdrop variants are loaded when (likely driven by the event tables).
+
 ## How these claims are checked
 
 `packages/formats/test/notes.test.ts` re-checks the notes against the user's own install

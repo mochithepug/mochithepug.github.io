@@ -133,6 +133,11 @@ export class Renderer {
     return p;
   }
 
+  /**
+   * Upload models. Each mesh's primitives are batched per cull mode into one triangle list:
+   * strip triangle i uses (i, i+1, i+2) for even i and (i+1, i, i+2) for odd i — the same winding
+   * D3D and GL give strips — so the result draws identically with far fewer draw calls.
+   */
   upload(models: PolModel[]): GpuModel {
     const gl = this.gl;
     const bufs: WebGLBuffer[] = [];
@@ -140,12 +145,26 @@ export class Renderer {
     const meshes: GpuMesh[] = [];
     for (const m of models) {
       for (const mesh of m.meshes) {
-        const prims = mesh.prims.map((p) => {
+        const byCull = new Map<number, number[]>();
+        for (const p of mesh.prims) {
+          const cull = CULL_TABLE[p.cull]!;
+          let out = byCull.get(cull);
+          if (!out) byCull.set(cull, (out = []));
+          const v = p.vertices, n = v.length / 8;
+          const push = (i: number) => { for (let c = 0; c < 8; c++) out!.push(v[i * 8 + c]!); };
+          if (p.list) for (let i = 0; i < n; i++) push(i);
+          else for (let i = 0; i + 2 < n; i++) {
+            if (i & 1) { push(i + 1); push(i); push(i + 2); } else { push(i); push(i + 1); push(i + 2); }
+          }
+        }
+        const prims: GpuPrim[] = [];
+        for (const [cull, data] of byCull) {
+          if (!data.length) continue;
           const vao = gl.createVertexArray()!;
           const buf = gl.createBuffer()!;
           gl.bindVertexArray(vao);
           gl.bindBuffer(gl.ARRAY_BUFFER, buf);
-          gl.bufferData(gl.ARRAY_BUFFER, p.vertices, gl.STATIC_DRAW);
+          gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(data), gl.STATIC_DRAW);
           gl.enableVertexAttribArray(0);
           gl.vertexAttribPointer(0, 3, gl.FLOAT, false, 32, 0);
           gl.enableVertexAttribArray(1);
@@ -154,8 +173,8 @@ export class Renderer {
           gl.vertexAttribPointer(2, 2, gl.FLOAT, false, 32, 24);
           bufs.push(buf);
           vaos.push(vao);
-          return { vao, buf, count: p.vertices.length / 8, list: p.list, cull: CULL_TABLE[p.cull]! };
-        });
+          prims.push({ vao, buf, count: data.length / 8, list: true, cull });
+        }
         meshes.push({
           state: meshState(mesh),
           texture: mesh.texture,

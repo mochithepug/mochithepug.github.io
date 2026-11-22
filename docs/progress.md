@@ -176,3 +176,14 @@ font; palette bank 0 for model textures (M3 correction). User keyboard: US.
 
 **Known limits:** box frame is a placeholder; line spacing (34 px) is measured, not yet from code — both
 come with the typing milestone (M8).
+
+## M7 — Stage 1 fly-through (in progress)
+
+### 7a — Stage geometry ✅ (2026-11-22)
+**Delivered:** renderer batches each mesh's primitives per cull mode into one triangle list (same strip
+winding; render identical to within scattered single pixels); `gl/fly.ts` free-fly camera; **Stage** tab
+(stage selector, per-file checkboxes + select-all toggle, `?off=` URL option).
+**Findings:** load request queue (`load_request_model` raw per-model reads for stage files vs
+`load_request_file` LZ whole files); Stage 1 = 11 world-space files meeting seamlessly + backdrop
+(`st1_1/1b`, several concentric wall rings — likely variants chosen at runtime).
+**Verified:** screenshots of the assembled town; user checked the Stage tab and the select-all toggle.

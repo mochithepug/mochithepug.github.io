@@ -97,3 +97,16 @@ main.wide { max-width: none; padding: 0 20px 20px; }
 #wrd-font-head { display: flex; gap: 10px; align-items: center; margin: 14px 0 6px; flex-wrap: wrap; }
 #wrd-font-head select { background: var(--bg); color: var(--fg); border: 1px solid var(--line); border-radius: 4px; }
 #wrd-font { image-rendering: pixelated; background: #000; border-radius: 6px; }
+
+/* --- stage ------------------------------------------------------------------------------ */
+#stg-layout { display: grid; grid-template-columns: 240px 1fr; gap: 14px; height: calc(100vh - 190px); }
+#stg-side { display: flex; flex-direction: column; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 8px; min-height: 0; gap: 6px; }
+#stg-side select { background: var(--bg); color: var(--fg); border: 1px solid var(--line); border-radius: 4px; }
+#stg-file-list { overflow-y: auto; flex: 1; font-size: 13px; }
+#stg-file-list label { display: flex; gap: 6px; align-items: center; padding: 2px 4px; }
+#stg-file-list .n { margin-left: auto; color: var(--muted); font-variant-numeric: tabular-nums; }
+#stg-view { margin: 0; display: flex; flex-direction: column; min-height: 0; padding: 8px 12px; }
+#stg-toolbar { display: flex; gap: 10px; align-items: center; padding-bottom: 8px; flex-wrap: wrap; }
+#stg-toolbar .spacer { flex: 1; }
+#stg-canvas { outline: none; }
+#stg-file-list .select-all { border-bottom: 1px solid var(--line); margin-bottom: 4px; padding-bottom: 6px; color: var(--muted); }

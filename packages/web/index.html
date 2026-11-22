@@ -23,6 +23,7 @@
       <button data-tab="models" class="tab">Models</button>
       <button data-tab="chars" class="tab">Characters</button>
       <button data-tab="words" class="tab">Words</button>
+      <button data-tab="stage" class="tab">Stage</button>
     </nav>
     <main id="tab-files">
       <section id="report" hidden></section>
@@ -135,6 +136,28 @@
               <option value="829f">Hiragana</option><option value="8340">Katakana</option><option value="8260">Full-width Latin</option><option value="889f">Kanji (first 240)</option><option value="8140">Symbols</option>
             </select></div>
           <canvas id="wrd-font"></canvas>
+        </section>
+      </div>
+    </main>
+    <main id="tab-stage" class="wide" hidden>
+      <div id="stg-layout">
+        <aside id="stg-side">
+          <label>Stage <select id="stg-select"></select></label>
+          <div class="muted small" id="stg-files-head">Files</div>
+          <div id="stg-file-list"></div>
+        </aside>
+        <section id="stg-view">
+          <div id="stg-toolbar">
+            <strong id="stg-title">Stage</strong>
+            <span id="stg-info" class="muted"></span>
+            <span class="spacer"></span>
+            <label><input id="stg-lit" type="checkbox" checked /> lighting</label>
+            <label><input id="stg-cull" type="checkbox" checked /> culling</label>
+            <span id="stg-pos" class="muted mono"></span>
+          </div>
+          <div class="canvas-wrap"><canvas id="stg-canvas" tabindex="0"></canvas>
+            <div class="canvas-help muted">drag: look · W/A/S/D: move · Q/E: down/up · shift: fast · wheel: speed</div>
+          </div>
         </section>
       </div>
     </main>
