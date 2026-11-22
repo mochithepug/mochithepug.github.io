@@ -126,3 +126,13 @@
 0040ce90	fn	cam_update	camera update: samples path DAT_00a11a18 at time DAT_00a14a30 → eye @00a149e0, target @00a149f8
 0040e1b0	fn	cam_set_lookat	eye/target → angles via FUN_0040bd10 (stored at eye+3, +4), roll at +5
 005f1cd8	data	g_cam_paths	{ptr, state}[pathId]
+0040bd10	fn	look_angles	direction → int16 yaw = atan2(dx,dz)·K, pitch = −atan2(dy,h)·K (K = 65536/2π @004dd520)
+0040bf40	fn	camera_normalize_angles	re-derive pitch/yaw/roll from the camera matrix's forward axis
+0040c690	fn	camera_build_matrices	camera world = T(eye)·Ry·Rx·Rz; view = Rz(−r)·Rx(−p)·Ry(−y)·T(−eye)
+004c28b0	fn	mtx_perspective	D3D LH perspective from (Sega fov, aspect, near, far); half-angle = fov × 0.5
+00488260	fn	projection_setup	projection = T(shake) · perspective(0x1D3B, 4/3, 0.5, 8000)
+004c1af0	fn	set_projection_mode	mode 3 → next matrix ops build the projection; 1 → SetTransform(PROJECTION, top)
+004bfea0	fn	device_state_init	fixed VIEW = diag(1,1,−1) @005eb8f8, ZENABLE, alpha test 1/GE, COLORVERTEX 0, material sources, Gouraud
+004c15c0	fn	mtx_invert	4×4 inverse
+004c1390	fn	mtx_transform_dir	v × top (3×3)
+005eb8f8	data	g_d3d_view_flip	fixed D3D view matrix diag(1,1,−1,1)

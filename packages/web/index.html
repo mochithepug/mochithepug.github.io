@@ -151,6 +151,15 @@
             <strong id="stg-title">Stage</strong>
             <span id="stg-info" class="muted"></span>
             <span class="spacer"></span>
+            <label>camera <select id="stg-cammode"><option value="fly">free fly</option><option value="path">game path</option></select></label>
+            <span id="stg-path-controls" hidden>
+              <select id="stg-path"></select>
+              <button id="stg-play" class="small">▶ play</button>
+              <input id="stg-time" type="range" min="0" max="0" step="1" value="0" />
+              <span id="stg-time-label" class="muted mono">0</span>
+              <select id="stg-speed"><option value="1" selected>1×</option><option value="0.5">½×</option><option value="0.25">¼×</option><option value="2">2×</option></select>
+              <label title="When a path ends, continue into the path that starts where it ends (first option at a branch); stop at the end of a run"><input id="stg-chain" type="checkbox" checked /> follow route</label>
+            </span>
             <label><input id="stg-lit" type="checkbox" checked /> lighting</label>
             <label><input id="stg-cull" type="checkbox" checked /> culling</label>
             <span id="stg-pos" class="muted mono"></span>

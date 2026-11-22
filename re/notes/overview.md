@@ -217,20 +217,36 @@ then re-analysis: **920 functions recovered, coverage 92 %** (3 261 functions de
   variants shown one at a time); `etc_1_*` are small local-space objects placed at runtime.
 - Open: which pieces / backdrop variants are loaded when (likely driven by the event tables).
 
-## Camera paths (M7b — in progress)
+## Camera paths & the game camera (M7b)
 
-- `cam/*.bin` (slots: names @004f3abc; per slot path-id list @004ddc44, count @004ddca4; per-id slot
-  @004ddcd4): u32 offset per path, then data area at `4 + count·4` (a 0xFFFFFFFF follows the table).
-  Path = 7 i32 channel indices (×4 = byte offset into the data area): 0–2 eye xyz, 3–5 look-at xyz,
-  6 roll (int, only if flag @00a110b0).
-- Curve: `u16 capacity (power of 2), u16 searchDepth`, then keys of 4 f32 `{t, value, outTangent,
-  inTangent}`; evaluation (`cam_curve_eval`) = padded binary search for the segment, then cubic Hermite
-  with tangents in per-time-unit (h00·v0 + h10·d·m0 + h01·v1 + h11·d·m1, 3.0 @004dd4c4).
-- `cp_st1.bin`: 23 paths (ids 48–70), 140–800 time units each (probably 60 Hz frames — unverified);
-  positions in Stage 1 world space (path 0 starts high, y≈197; later ones at eye height y≈15–23).
-- Camera state: path id @00a11a18, time (int) @00a14a30 → eye @00a149e0, target @00a149f8, then
-  `cam_set_lookat` (FUN_0040bd10 converts eye−target to angles). Next: FUN_0040bd10, the projection/FOV
-  setup, and which event drives the path sequence.
+- `cam/*.bin` (slots: names @004f3abc; per slot path-id list @004ddc44, count @004ddca4): u32 offset per
+  path, data area at `4 + count·4`. Path = 7 i32 channel indices (×4 bytes into the data area):
+  0–2 eye xyz, 3–5 look-at xyz, 6 roll (int; only if flag @00a110b0).
+- Curve: `u16 capacity (power of 2), u16 searchDepth`, keys `{f32 t, value, outTangent, inTangent}`;
+  `cam_curve_eval` = padded binary search + cubic Hermite (tangents per time unit). **Verified: every
+  curve of all 14 camera files passes exactly through its keys** (test).
+- Paths form a **route graph**: each path continues into those starting where it ends; branch points
+  (Stage 1: 7, 10, 13; Stage 2: 6, 8, 9, 19, 38) are alternative routes, and paths with no neighbours are
+  standalone event shots (Stage 2 has 30). The event script chooses the actual sequence.
+- The exe's only COM objects are DirectPlay + DirectPlayLobby (networking) — there is **no video
+  playback**; story scenes are real-time (characters + camera shots + voices + subtitles).
+- `cp_st1.bin`: 23 paths (ids 48–70), 140–800 time units each. Playback assumes 1 unit = one 60 Hz frame
+  (consistent with the frame-based engine; to confirm against a recording). The real order/timing of
+  paths is driven by the event script (M9); the viewer plays them in id order.
+- Angles (`look_angles`): d = eye − target, yaw = int16(trunc(atan2(dx,dz)·K)), h by quadrant,
+  pitch = −int16(trunc(atan2(dy,h)·K)). View (`camera_build_matrices`) = Rz(−roll)·Rx(−pitch)·
+  Ry(−yaw)·T(−eye) — this looks along **−z**; the device's fixed **D3D VIEW matrix is diag(1,1,−1)**
+  (`device_state_init`), so the full view = game view · z-flip (a reflection, det −1). The game folds
+  its view into each object's WORLD matrix.
+- Projection (`projection_setup`): T(shake) · perspective(fov 0x1D3B → half-angle trunc(×0.5) ≈ 20.55°,
+  i.e. 41.1° vertical, aspect 4/3, near 0.5, far 8000), D3D LH.
+- **Correction to M4–M6 viewers:** they used a plain LookAtLH (no z-flip) and a cull mapping that was
+  inverted relative to the real pipeline; the two errors cancelled for culling but every viewer showed
+  a **mirror image**. Fixed: renderer maps D3DCULL_CCW → GL front = CW (verified with the exact game
+  pipeline: correct faces culled), and all viewer cameras use the game's convention (`gameLookAt`).
+  A letter "R" model now reads correctly.
+- Device defaults (`device_state_init`): ZENABLE, ALPHAREF 1 / GE, COLORVERTEX 0, COLORKEYBLEND 0,
+  diffuse/specular/ambient/emissive material source = material, CULL none, Gouraud — relevant for 7c.
 
 ## How these claims are checked
 

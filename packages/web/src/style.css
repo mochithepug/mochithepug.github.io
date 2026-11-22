@@ -110,3 +110,7 @@ main.wide { max-width: none; padding: 0 20px 20px; }
 #stg-toolbar .spacer { flex: 1; }
 #stg-canvas { outline: none; }
 #stg-file-list .select-all { border-bottom: 1px solid var(--line); margin-bottom: 4px; padding-bottom: 6px; color: var(--muted); }
+#stg-path, #stg-speed, #stg-cammode { background: var(--bg); color: var(--fg); border: 1px solid var(--line); border-radius: 4px; }
+#stg-path-controls { display: inline-flex; gap: 8px; align-items: center; }
+#stg-time { width: 160px; }
+.canvas-wrap.letterbox { display: flex; align-items: center; justify-content: center; background: #000; border-radius: 6px; }

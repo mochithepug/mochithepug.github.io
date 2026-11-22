@@ -10,3 +10,4 @@ export * from './d3dmath.ts';
 export * from './character.ts';
 export * from './font.ts';
 export * from './words.ts';
+export * from './camera.ts';

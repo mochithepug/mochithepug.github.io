@@ -12,7 +12,7 @@ import {
   type TextureSet,
 } from '@ttotd/formats';
 import type { GameFS } from './ingest/gamefs';
-import { identity, lookAtLH, perspectiveFovLH } from '@ttotd/formats';
+import { gameLookAt, identity, perspectiveFovLH } from '@ttotd/formats';
 import { Renderer, type GpuModel, type TextureSource } from './gl/renderer';
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
@@ -241,7 +241,7 @@ function draw() {
     if (!ctx.gpu) return;
     const c = ctx.cam;
     const eye = eyePos();
-    const view = lookAtLH(eye, c.target, [0, 1, 0]);
+    const view = gameLookAt(eye as [number, number, number], c.target);
     const proj = perspectiveFovLH(FOV, w / h, Math.max(c.dist - c.radius * 4, c.dist / 1000), c.dist + c.radius * 4);
     const dir = c.target.map((v, k) => v - eye[k]!);
     ctx.renderer.draw(ctx.gpu, ctx.texSource, {
@@ -290,11 +290,11 @@ $('mdl-reset').addEventListener('click', () => {
     if (drag.pan) {
       const s = (c.dist * Math.tan(FOV / 2) * 2) / canvas.clientHeight;
       // camera right / up vectors (left-handed, yaw around +Y)
-      const right = [Math.cos(c.yaw), 0, Math.sin(c.yaw)];
+      const right = [-Math.cos(c.yaw), 0, -Math.sin(c.yaw)]; // screen-right in the game's view
       const up = [-Math.sin(c.pitch) * Math.sin(c.yaw), Math.cos(c.pitch), Math.sin(c.pitch) * Math.cos(c.yaw)];
       for (let k = 0; k < 3; k++) c.target[k] = c.target[k]! - right[k]! * dx * s + up[k]! * dy * s;
     } else {
-      c.yaw -= dx * 0.01;
+      c.yaw += dx * 0.01;
       c.pitch = Math.max(-1.55, Math.min(1.55, c.pitch + dy * 0.01));
     }
     draw();

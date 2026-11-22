@@ -275,11 +275,12 @@ export class Renderer {
         for (const p of m.prims) {
           if (!o.culling || p.cull === Cull.NONE) gl.disable(gl.CULL_FACE);
           else {
-            // D3D culls by screen-space (y-down) winding; GL by window-space (y-up) winding, which
-            // mirrors it: D3DCULL_CCW ≡ GL front = CCW, cull BACK; D3DCULL_CW ≡ front = CW.
+            // D3DCULL_CCW keeps triangles that are clockwise in D3D screen space. Verified against the
+            // exact game pipeline (game view + fixed z-flip view matrix, M7b): that corresponds to GL
+            // front = CW, cull BACK (and D3DCULL_CW to front = CCW).
             gl.enable(gl.CULL_FACE);
             gl.cullFace(gl.BACK);
-            gl.frontFace(p.cull === Cull.CCW ? gl.CCW : gl.CW);
+            gl.frontFace(p.cull === Cull.CCW ? gl.CW : gl.CCW);
           }
           gl.bindVertexArray(p.vao);
           gl.drawArrays(p.list ? gl.TRIANGLES : gl.TRIANGLE_STRIP, 0, p.count);

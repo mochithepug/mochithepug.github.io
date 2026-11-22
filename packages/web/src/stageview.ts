@@ -1,5 +1,16 @@
 /** Stage tab (M7a): a stage's geometry files assembled in world space, explored with a fly camera. */
-import { identity, type PolModel } from '@ttotd/formats';
+import {
+  CameraFile,
+  pathContinuations,
+  cameraFromSample,
+  cameraProjection,
+  cameraView,
+  D3D_VIEW_FLIP,
+  identity,
+  mul,
+  readCameraSlots,
+  type PolModel,
+} from '@ttotd/formats';
 import { Assets } from './assets';
 import type { GameFS } from './ingest/gamefs';
 import { FlyCamera } from './gl/fly';
@@ -23,6 +34,13 @@ interface Ctx {
   stage: string;
   last: number;
   token: number;
+  /** When set, render through the game camera (path index, time in path units). */
+  path?: { file: CameraFile; index: number; t: number; ids: number[] };
+  camFile?: CameraFile;
+  camIds: number[];
+  /** Paths that start where each path ends (route continuity). */
+  camNext: number[][];
+  playing: boolean;
 }
 let ctx: Ctx | undefined;
 
@@ -43,7 +61,7 @@ function stageGroups(fs: GameFS): Map<string, string[]> {
 export async function initStage(fs: GameFS, params = new URLSearchParams()) {
   const assets = await Assets.open(fs);
   const cam = new FlyCamera();
-  ctx = { assets, renderer: new Renderer($<HTMLCanvasElement>('stg-canvas')), cam, files: [], stage: '', last: performance.now(), token: 0 };
+  ctx = { assets, renderer: new Renderer($<HTMLCanvasElement>('stg-canvas')), cam, files: [], stage: '', last: performance.now(), token: 0, camIds: [], camNext: [], playing: false };
   cam.attach($<HTMLCanvasElement>('stg-canvas'), () => !$('tab-stage').hidden);
   cam.onChange = () => redraw();
   const groups = stageGroups(fs);
@@ -60,6 +78,12 @@ export async function initStage(fs: GameFS, params = new URLSearchParams()) {
   for (const [k, n] of [['x', 0], ['y', 1], ['z', 2]] as const) if (params.has(k)) cam.pos[n] = Number(params.get(k));
   if (params.has('yaw')) cam.yaw = Number(params.get('yaw'));
   if (params.has('pitch')) cam.pitch = Number(params.get('pitch'));
+  if (params.has('campath')) {
+    $<HTMLSelectElement>('stg-cammode').value = 'path';
+    setCameraMode('path', Number(params.get('campath')), Number(params.get('camt') ?? 0));
+    ctx.playing = params.get('play') === '1';
+    updatePlayButton();
+  }
   requestAnimationFrame(tick);
 }
 
@@ -80,8 +104,55 @@ async function openStage(stage: string, names: string[]) {
   }
   renderFileList();
   placeCamera();
+  await loadStageCamera(stage);
   updateInfo();
   redraw();
+}
+
+/** Load cam/cp_stN.bin for the stage (path list in the exe's order). */
+async function loadStageCamera(stage: string) {
+  if (!ctx) return;
+  const n = stage.replace(/\D/g, '');
+  const slot = readCameraSlots(ctx.assets.pe).find((x) => x.file === `cp_st${n}.bin`);
+  ctx.camFile = slot && ctx.assets.fs.has(`cam/${slot.file}`) ? new CameraFile(await ctx.assets.file(`cam/${slot.file}`), slot.ids.length) : undefined;
+  ctx.camIds = slot?.ids ?? [];
+  ctx.camNext = ctx.camFile ? pathContinuations(ctx.camFile) : [];
+  const hasPrev = new Set(ctx.camNext.flat());
+  const sel = $<HTMLSelectElement>('stg-path');
+  sel.replaceChildren(
+    ...ctx.camIds.map((id, k) => {
+      const nx = ctx!.camNext[k]!;
+      const label = `${hasPrev.has(k) ? '' : '▶ '}path ${k} · ${Math.round(ctx!.camFile!.duration(k))}f → ${nx.length ? nx.join(' | ') : 'end'}`;
+      const o = new Option(label, String(k));
+      o.title = `id ${id}${nx.length > 1 ? ' — branch point' : ''}`;
+      return o;
+    }),
+  );
+  if (ctx.path) setCameraMode('path', 0, 0);
+}
+
+function setCameraMode(mode: string, index = 0, t = 0) {
+  if (!ctx) return;
+  const wrap = $('stg-canvas').parentElement!;
+  if (mode === 'path' && ctx.camFile) {
+    ctx.path = { file: ctx.camFile, index: Math.min(index, ctx.camIds.length - 1), t, ids: ctx.camIds };
+    $<HTMLSelectElement>('stg-path').value = String(ctx.path.index);
+    const slider = $<HTMLInputElement>('stg-time');
+    slider.max = String(Math.floor(ctx.camFile.duration(ctx.path.index)));
+    $('stg-path-controls').hidden = false;
+    wrap.classList.add('letterbox');
+  } else {
+    ctx.path = undefined;
+    ctx.playing = false;
+    $('stg-path-controls').hidden = true;
+    wrap.classList.remove('letterbox');
+  }
+  updatePlayButton();
+  redraw();
+}
+
+function updatePlayButton() {
+  $('stg-play').textContent = ctx?.playing ? '❚❚ pause' : '▶ play';
 }
 
 function renderFileList() {
@@ -160,7 +231,24 @@ function tick(now: number) {
   if (!ctx) return;
   const dt = Math.min((now - ctx.last) / 1000, 0.1);
   ctx.last = now;
-  if (!$('tab-stage').hidden && ctx.cam.update(dt)) redraw();
+  if ($('tab-stage').hidden) return;
+  if (ctx.path) {
+    if (ctx.playing) {
+      const p = ctx.path, dur = p.file.duration(p.index);
+      p.t += dt * 60 * Number($<HTMLSelectElement>('stg-speed').value);
+      if (p.t > dur) {
+        const nx = ctx.camNext[p.index] ?? [];
+        if ($<HTMLInputElement>('stg-chain').checked && nx.length) setCameraMode('path', nx[0]!, 0);
+        else {
+          // end of a run (or chain off): stop on the last frame instead of jumping elsewhere
+          p.t = dur;
+          ctx.playing = false;
+          updatePlayButton();
+        }
+      }
+      redraw();
+    }
+  } else if (ctx.cam.update(dt)) redraw();
 }
 
 let pending = false;
@@ -171,15 +259,53 @@ export function redraw() {
     pending = false;
     if (!ctx || $('tab-stage').hidden) return;
     const r = ctx.renderer, canvas = r.canvas;
+    if (ctx.path) {
+      // The game renders 640×480: show the game camera at 4:3, letterboxed.
+      const wrap = canvas.parentElement!;
+      const cw = Math.min(wrap.clientWidth, (wrap.clientHeight * 4) / 3);
+      canvas.style.width = `${cw}px`;
+      canvas.style.height = `${(cw * 3) / 4}px`;
+    } else {
+      canvas.style.width = '';
+      canvas.style.height = '';
+    }
     const dpr = window.devicePixelRatio || 1;
     const w = Math.max(1, Math.round(canvas.clientWidth * dpr)), h = Math.max(1, Math.round(canvas.clientHeight * dpr));
     if (canvas.width !== w || canvas.height !== h) { canvas.width = w; canvas.height = h; }
     r.clear(0.05, 0.05, 0.07);
-    const { view, proj, lightDir } = ctx.cam.matrices(w / h);
+    let { view, proj, lightDir } = ctx.cam.matrices(w / h);
+    if (ctx.path) {
+      const c = cameraFromSample(ctx.path.file.sample(ctx.path.index, ctx.path.t));
+      view = mul(cameraView(c), D3D_VIEW_FLIP);
+      proj = cameraProjection(0x1d3b, w / h);
+    }
     const lit = $<HTMLInputElement>('stg-lit').checked, culling = $<HTMLInputElement>('stg-cull').checked;
     for (const f of ctx.files) if (f.on && f.gpu) r.draw(f.gpu, f.tex, { world: identity(), view, proj, lit, culling, lightDir });
-    const p = ctx.cam.pos.map((v) => v.toFixed(0)).join(', ');
-    $('stg-pos').textContent = `pos (${p}) yaw ${ctx.cam.yaw.toFixed(2)} pitch ${ctx.cam.pitch.toFixed(2)}`;
+    if (ctx.path) {
+      const s = ctx.path.file.sample(ctx.path.index, ctx.path.t);
+      const c = cameraFromSample(s);
+      $<HTMLInputElement>('stg-time').value = String(Math.floor(ctx.path.t));
+      $('stg-time-label').textContent = `${Math.floor(ctx.path.t)} / ${Math.round(ctx.path.file.duration(ctx.path.index))}`;
+      $('stg-pos').textContent = `eye (${s.eye.map((v) => v.toFixed(0)).join(', ')}) pitch ${c.pitch} yaw ${c.yaw}`;
+    } else {
+      const p = ctx.cam.pos.map((v) => v.toFixed(0)).join(', ');
+      $('stg-pos').textContent = `pos (${p}) yaw ${ctx.cam.yaw.toFixed(2)} pitch ${ctx.cam.pitch.toFixed(2)}`;
+    }
   });
 }
 for (const id of ['stg-lit', 'stg-cull']) $(id).addEventListener('change', () => redraw());
+
+$<HTMLSelectElement>('stg-cammode').addEventListener('change', (e) => setCameraMode((e.target as HTMLSelectElement).value));
+$<HTMLSelectElement>('stg-path').addEventListener('change', (e) => setCameraMode('path', Number((e.target as HTMLSelectElement).value), 0));
+$('stg-play').addEventListener('click', () => {
+  if (!ctx) return;
+  ctx.playing = !ctx.playing;
+  updatePlayButton();
+});
+$<HTMLInputElement>('stg-time').addEventListener('input', (e) => {
+  if (!ctx?.path) return;
+  ctx.playing = false;
+  updatePlayButton();
+  ctx.path.t = Number((e.target as HTMLInputElement).value);
+  redraw();
+});

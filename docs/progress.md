@@ -188,7 +188,17 @@ winding; render identical to within scattered single pixels); `gl/fly.ts` free-f
 (`st1_1/1b`, several concentric wall rings — likely variants chosen at runtime).
 **Verified:** screenshots of the assembled town; user checked the Stage tab and the select-all toggle.
 
-### 7b — Camera path (in progress, paused 2026-11-22)
-Format of `cam/*.bin` decoded (see re/notes/overview.md "Camera paths"); nothing implemented yet.
-Next: port `cam_curve_eval` + path sampling to `packages/formats/src/camera.ts`, trace FUN_0040bd10 and
-the FOV/projection, then a "play camera path" mode in the Stage tab.
+### 7b — Camera path ✅ (2026-11-22)
+**Delivered:** `packages/formats/src/camera.ts` (camera slots, `CameraFile` with the exe's curve
+evaluator, `lookAngles`, `cameraView`, `cameraProjection`, `D3D_VIEW_FLIP`, `gameLookAt`); Stage tab
+**camera: game path** mode (path list, play/pause, time slider, speed, chain to next path, 4:3 letterbox,
+exact game projection).
+**Verified:** every camera curve passes through its keys; for all 23 Stage 1 paths the target is dead
+ahead after the z-flip (tests); screenshots of path 0 (aerial start) and path 2 (street level).
+**Findings / fixes:** fixed z-flip view matrix; corrected cull mapping and un-mirrored all viewers
+(M4–M6 views were mirror images); control directions adjusted to the un-mirrored view.
+**Route structure:** paths form a graph — `pathContinuations` links each path to those starting where it
+ends. Stage 1: branches at 7, 10, 13; Stage 2: 66 paths, branches at 6, 8, 9, 19, 38 and 30 standalone
+event shots. Playback "follow route" continues along continuity (first option at a branch) and stops at
+the end of a run; the real sequence comes from the event script (M9). User: camera looks good.
+**Assumption to confirm:** 1 path time unit = 1/60 s.

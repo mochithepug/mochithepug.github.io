@@ -1,5 +1,5 @@
 /** Free-fly camera: drag to look, WASD to move, Q/E down/up, shift = fast. D3D-style (left-handed, y up). */
-import { lookAtLH, perspectiveFovLH, type Mat4 } from '@ttotd/formats';
+import { gameLookAt, perspectiveFovLH, type Mat4 } from '@ttotd/formats';
 
 export class FlyCamera {
   pos: [number, number, number] = [0, 50, 0];
@@ -18,9 +18,9 @@ export class FlyCamera {
 
   matrices(aspect: number): { view: Mat4; proj: Mat4; lightDir: [number, number, number] } {
     const d = this.dir();
-    const at = this.pos.map((v, k) => v + d[k]!);
+    const at = this.pos.map((v, k) => v + d[k]!) as [number, number, number];
     return {
-      view: lookAtLH(this.pos, at, [0, 1, 0]),
+      view: gameLookAt(this.pos, at), // the game's own view convention (incl. its z-flip)
       proj: perspectiveFovLH(this.fovY, aspect, this.near, this.far),
       lightDir: [0.3, -1, 0.5],
     };
@@ -36,7 +36,7 @@ export class FlyCamera {
     canvas.addEventListener('pointerup', () => (drag = undefined));
     canvas.addEventListener('pointermove', (e) => {
       if (!drag) return;
-      this.yaw += (e.clientX - drag.x) * 0.004;
+      this.yaw -= (e.clientX - drag.x) * 0.004; // game view convention: increasing yaw turns left
       this.pitch = Math.max(-1.5, Math.min(1.5, this.pitch - (e.clientY - drag.y) * 0.004));
       drag = { x: e.clientX, y: e.clientY };
       this.onChange?.();
@@ -58,7 +58,7 @@ export class FlyCamera {
   /** Advance by dt seconds; returns true if the camera moved. */
   update(dt: number): boolean {
     if (!this.keys.size) return false;
-    const d = this.dir(), right = [Math.cos(this.yaw), 0, -Math.sin(this.yaw)];
+    const d = this.dir(), right = [-Math.cos(this.yaw), 0, Math.sin(this.yaw)]; // screen-right in the game's (un-mirrored) view
     const v = this.speed * dt * (this.keys.has('shift') ? 4 : 1);
     const k = this.keys;
     const f = (k.has('w') ? 1 : 0) - (k.has('s') ? 1 : 0), r = (k.has('d') ? 1 : 0) - (k.has('a') ? 1 : 0), u = (k.has('e') ? 1 : 0) - (k.has('q') ? 1 : 0);
