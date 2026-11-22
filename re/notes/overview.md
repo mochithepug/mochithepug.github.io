@@ -301,6 +301,9 @@ Port: `packages/formats/src/prop.ts`; viewer: Props tab.
   - Game objects advance f by 1 or 2 per tick, depending on the object.
 - **Pairings** (`GAME_PROP_MOTIONS`): from object set-up code (literal type/motion stores) and
   {type, motion, …} 12-byte records @005b5b10. A test checks that every pairing fits the layout exactly.
+- **Water #28** = 6 one-sided translucent cards (droplet rings, texture mostly transparent, mesh alpha 0.7,
+  culled like everything else): invisible from behind. The Props tab shows them with culling off or
+  after rotating the view; in the game the owner object presumably faces them towards the camera (M9).
 - **Checked visually:** at frame 0 props are intact objects (barrels, gates, window panes, cell grate,
   cabinets, chairs, pots, the full door #15). Glass #8 shatters into shards; door types #12–14 are
   splinter debris.

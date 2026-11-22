@@ -62,6 +62,8 @@ export async function initProps(fs: GameFS, params = new URLSearchParams()) {
   const type = (want && ctx.types.find((t) => String(t.index) === want || t.name === want)) || ctx.types[12]!;
   await selectType(type, params.get('motion') ?? undefined);
   if (params.has('frame')) setFrame(Number(params.get('frame')));
+  if (params.has('bg')) $<HTMLSelectElement>('prp-bg').value = params.get('bg')!;
+  if (params.has('fitframe')) fitView(ctx.frame);
   updatePlayButton();
   requestAnimationFrame(tick);
 }
@@ -181,10 +183,12 @@ async function selectMotion(info: MotionInfo, fit: boolean) {
   redraw();
 }
 
-function fitView() {
+/** Fit the camera to the whole motion, or to the current frame only (`only`). */
+function fitView(only?: number) {
   if (!ctx?.motion) return;
   const lo = [Infinity, Infinity, Infinity], hi = [-Infinity, -Infinity, -Infinity];
-  for (let f = 0; f < ctx.motion.frames; f += 2) {
+  const frames = only === undefined ? [...Array(Math.ceil(ctx.motion.frames / 2)).keys()].map((k) => k * 2) : [only];
+  for (const f of frames) {
     for (const { matrix } of poseProp(ctx.motion, f, identity(), f - 1, () => 5)) {
       for (let k = 0; k < 3; k++) {
         lo[k] = Math.min(lo[k]!, matrix[12 + k]!);
@@ -236,7 +240,10 @@ export function redraw() {
     const dpr = window.devicePixelRatio || 1;
     const w = Math.max(1, Math.round(canvas.clientWidth * dpr)), h = Math.max(1, Math.round(canvas.clientHeight * dpr));
     if (canvas.width !== w || canvas.height !== h) { canvas.width = w; canvas.height = h; }
-    r.clear();
+    const bg = $<HTMLSelectElement>('prp-bg').value;
+    if (bg === 'black') r.clear(0, 0, 0);
+    else if (bg === 'light') r.clear(0.85, 0.85, 0.88);
+    else r.clear();
     if (!ctx.motion) return;
     const { view, proj, lighting, eye } = ctx.cam.matrices(w / h);
     const lit = $<HTMLInputElement>('prp-lit').checked, culling = $<HTMLInputElement>('prp-cull').checked;
@@ -258,7 +265,12 @@ $<HTMLInputElement>('prp-frame').addEventListener('input', (e) => {
   updatePlayButton();
   setFrame(Number((e.target as HTMLInputElement).value));
 });
-for (const id of ['prp-lit', 'prp-cull']) $(id).addEventListener('change', () => redraw());
+for (const id of ['prp-lit', 'prp-cull', 'prp-bg']) $(id).addEventListener('change', () => redraw());
+$('prp-fitframe').addEventListener('click', () => {
+  if (!ctx) return;
+  fitView(ctx.frame);
+  redraw();
+});
 $('prp-reset').addEventListener('click', () => {
   if (!ctx) return;
   ctx.cam.yaw = 0.6;
