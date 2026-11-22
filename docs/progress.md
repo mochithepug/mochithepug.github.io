@@ -202,3 +202,13 @@ ends. Stage 1: branches at 7, 10, 13; Stage 2: 66 paths, branches at 6, 8, 9, 19
 event shots. Playback "follow route" continues along continuity (first option at a branch) and stops at
 the end of a run; the real sequence comes from the event script (M9). User: camera looks good.
 **Assumption to confirm:** 1 path time unit = 1/60 s.
+
+### 7c — Lighting & fog (2026-11-22) ✅ verified by user 2026-11-23
+**Delivered:** `scenelight.ts` (scene inputs → D3D7 state exactly as `light_setup_single` / `fog_set`);
+renderer: D3D7 fixed-function lighting equation, flat shading with D3D's first vertex, linear table fog;
+Stage tab "Scene light & fog" panel (game inputs, exe reset values); viewers light from the camera using the
+same formula.
+**Verified:** constants match the exe; light direction equals the exe's matrix-stack sequence; fog range
+doubling/ordering (tests). Screenshot of path 2 with the game's lighting.
+**Open:** each scene's actual light/fog values are set by event commands → M9 (the panel lets you explore
+until then).

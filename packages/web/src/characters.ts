@@ -241,11 +241,11 @@ export function redraw() {
     const w = Math.max(1, Math.round(canvas.clientWidth * dpr)), h = Math.max(1, Math.round(canvas.clientHeight * dpr));
     if (canvas.width !== w || canvas.height !== h) { canvas.width = w; canvas.height = h; }
     r.clear();
-    const { view, proj, lightDir } = ctx.cam.matrices(w / h);
+    const { view, proj, lighting, eye } = ctx.cam.matrices(w / h);
     const lit = $<HTMLInputElement>('chr-lit').checked, culling = $<HTMLInputElement>('chr-cull').checked;
     for (const { node, matrix } of currentPose()) {
       const part = ctx.parts.get(node.model);
-      if (part && node.ref) r.draw(part.gpu, part.tex, { world: matrix, view, proj, lit, culling, lightDir });
+      if (part && node.ref) r.draw(part.gpu, part.tex, { world: matrix, view, proj, lit, culling, lighting, eye });
     }
   });
 }

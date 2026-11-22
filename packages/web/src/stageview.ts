@@ -1,6 +1,9 @@
 /** Stage tab (M7a): a stage's geometry files assembled in world space, explored with a fly camera. */
 import {
   CameraFile,
+  d3dLighting,
+  DEFAULT_SCENE_LIGHT,
+  type SceneLight,
   pathContinuations,
   cameraFromSample,
   cameraProjection,
@@ -273,14 +276,20 @@ export function redraw() {
     const w = Math.max(1, Math.round(canvas.clientWidth * dpr)), h = Math.max(1, Math.round(canvas.clientHeight * dpr));
     if (canvas.width !== w || canvas.height !== h) { canvas.width = w; canvas.height = h; }
     r.clear(0.05, 0.05, 0.07);
-    let { view, proj, lightDir } = ctx.cam.matrices(w / h);
+    let { view, proj } = ctx.cam.matrices(w / h);
+    let eye: [number, number, number] = [...ctx.cam.pos];
     if (ctx.path) {
       const c = cameraFromSample(ctx.path.file.sample(ctx.path.index, ctx.path.t));
       view = mul(cameraView(c), D3D_VIEW_FLIP);
+      eye = c.eye;
       proj = cameraProjection(0x1d3b, w / h);
     }
     const lit = $<HTMLInputElement>('stg-lit').checked, culling = $<HTMLInputElement>('stg-cull').checked;
-    for (const f of ctx.files) if (f.on && f.gpu) r.draw(f.gpu, f.tex, { world: identity(), view, proj, lit, culling, lightDir });
+    const sl = sceneLight();
+    const lighting = d3dLighting(sl);
+    const fog = sl.fog ? { color: sl.fogColor } : (false as const);
+    if (sl.fog) r.clear(...sl.fogColor);
+    for (const f of ctx.files) if (f.on && f.gpu) r.draw(f.gpu, f.tex, { world: identity(), view, proj, lit, culling, lighting, eye, fog });
     if (ctx.path) {
       const s = ctx.path.file.sample(ctx.path.index, ctx.path.t);
       const c = cameraFromSample(s);
@@ -307,5 +316,34 @@ $<HTMLInputElement>('stg-time').addEventListener('input', (e) => {
   ctx.playing = false;
   updatePlayButton();
   ctx.path.t = Number((e.target as HTMLInputElement).value);
+  redraw();
+});
+
+// --- scene light & fog controls (the game's inputs; real per-scene values come from M9) ---------
+const SL_IDS = ['sl-r', 'sl-g', 'sl-b', 'sl-i', 'sl-p', 'sl-y', 'sl-fs', 'sl-fe'];
+function sceneLight(): SceneLight {
+  const v = (id: string) => Number($<HTMLInputElement>(id).value);
+  const hex = $<HTMLInputElement>('sl-fc').value;
+  const fc = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16) / 255) as [number, number, number];
+  for (const id of SL_IDS) $(`${id}-v`).textContent = $<HTMLInputElement>(id).value;
+  return {
+    color: [v('sl-r'), v('sl-g'), v('sl-b')],
+    intensity: v('sl-i'),
+    pitch: Math.round((v('sl-p') / 360) * 65536),
+    yaw: Math.round((v('sl-y') / 360) * 65536),
+    fogStart: v('sl-fs'),
+    fogEnd: v('sl-fe'),
+    fogColor: fc,
+    fog: $<HTMLInputElement>('sl-fog').checked,
+  };
+}
+for (const id of [...SL_IDS, 'sl-fog', 'sl-fc']) $(id).addEventListener('input', () => redraw());
+$('sl-reset').addEventListener('click', () => {
+  const d = DEFAULT_SCENE_LIGHT;
+  const set = (id: string, v: number) => ($<HTMLInputElement>(id).value = String(v));
+  set('sl-r', d.color[0]); set('sl-g', d.color[1]); set('sl-b', d.color[2]); set('sl-i', d.intensity);
+  set('sl-p', 0); set('sl-y', 0); set('sl-fs', 0); set('sl-fe', 1000);
+  $<HTMLInputElement>('sl-fog').checked = d.fog;
+  $<HTMLInputElement>('sl-fc').value = '#000000';
   redraw();
 });

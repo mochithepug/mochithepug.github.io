@@ -99,6 +99,13 @@ Each milestone: **deliverable → how you verify**.
   → Typing feel and score values match the original.
 - [ ] **M9 — Event tables.** Decode `evt/` (pointer rebasing) + Stage 1 event timeline viewer.
   → Spawns/events line up with Stage 1.
+- [ ] **M9b — Stage 1 story scenes.** Play Stage 1's scripted scenes as the game does: characters with
+  their motions, camera cuts (standalone camera paths), voices and subtitles in sync, driven by the event
+  tables. (No video files exist — all scenes are real-time.)
+  → Compare scenes with the real game (recording/screenshots): same shots, timing, lines.
+  Reference so far: Stage 1 opens path 0 → chapter title card (`scr_chapter_st1` layers) → path 1
+  (`gameplay/cutscene/1/1.png`), title ≈3 s; path 1 subtitle "We're meeting G over there." (voice 01_J /
+  01_GA); a cut scene between path 6 and path 7 (route resumes in place); cut scenes show the blinking "Press the Enter key to skip" sign top right (sprite 0x20F at (384,18); scenes marked by event opcode 0x2C, 5 in Stage 1).
 - [ ] **M10 — Stage 1 playable.** Event interpreter, Stage 1 enemies, damage, life, items, SE/voice/BGM.
   → Play Stage 1 start to end.
 - [ ] **M11 — Stage 1 boss.**

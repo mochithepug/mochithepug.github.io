@@ -114,3 +114,10 @@ main.wide { max-width: none; padding: 0 20px 20px; }
 #stg-path-controls { display: inline-flex; gap: 8px; align-items: center; }
 #stg-time { width: 160px; }
 .canvas-wrap.letterbox { display: flex; align-items: center; justify-content: center; background: #000; border-radius: 6px; }
+#stg-light { border-top: 1px solid var(--line); padding-top: 6px; font-size: 12px; }
+#stg-light summary { cursor: pointer; color: var(--fg); }
+.tiny { font-size: 11px; margin: 4px 0; }
+.light-grid { display: grid; grid-template-columns: 1fr 44px; gap: 2px 6px; align-items: center; margin-bottom: 6px; }
+.light-grid label { display: flex; flex-direction: column; gap: 1px; }
+.light-grid input[type=range] { width: 100%; }
+.light-grid label.inline { flex-direction: row; }

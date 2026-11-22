@@ -3,7 +3,7 @@
  * Lighting here is a viewer approximation (one directional light + ambient); the game's exact
  * lights/fog are ported in a later milestone.
  */
-import { CULL_TABLE, Cull, meshState, type MeshState, type PolModel } from '@ttotd/formats';
+import { CULL_TABLE, Cull, d3dLighting, DEFAULT_SCENE_LIGHT, meshState, type D3DLighting, type MeshState, type PolModel } from '@ttotd/formats';
 import type { Mat4 } from '@ttotd/formats';
 
 const VS = `#version 300 es
@@ -11,51 +11,83 @@ layout(location=0) in vec3 aPos;
 layout(location=1) in vec3 aNormal;
 layout(location=2) in vec2 aUV;
 uniform mat4 uWorld, uView, uProj;
-uniform vec3 uLightDir;       // world space, direction the light travels
-uniform vec3 uColor;          // material RGB
-uniform float uAlpha;         // material alpha
-uniform float uAmbientScale;  // material ambient = colour * scale
+uniform bool uLit;
+// Direct3D 7 fixed-function lighting (one directional light, as light_setup_single sets up)
+uniform vec3 uAmbientRS;   // AMBIENT render state
+uniform vec3 uLd, uLs, uLa; // light diffuse / specular / ambient
+uniform vec3 uToLight;     // world-space direction towards the light
+uniform vec3 uEye;         // world-space eye (LOCALVIEWER = TRUE, the D3D7 default)
+uniform vec3 uColor;       // material diffuse RGB
+uniform float uAlpha;      // material diffuse alpha
+uniform float uAmbientScale; // material ambient = colour × scale
 uniform vec3 uSpecular;
 uniform float uPower;
-uniform bool uLit;
 out vec4 vDiffuse;
+flat out vec4 vDiffuseFlat;
 out vec3 vSpec;
+flat out vec3 vSpecFlat;
 out vec2 vUV;
+out float vW;
 void main() {
   vec4 wp = uWorld * vec4(aPos, 1.0);
-  vec4 vp = uView * wp;
-  vec4 clip = uProj * vp;
+  vec4 clip = uProj * (uView * wp);
   gl_Position = vec4(clip.xy, clip.z * 2.0 - clip.w, clip.w); // D3D depth [0,1] → GL [-1,1]
+  vW = clip.w; // eye depth for W-based table fog
   vUV = aUV;
-  if (!uLit) { vDiffuse = vec4(uColor, uAlpha); vSpec = vec3(0.0); return; }
-  vec3 n = normalize(mat3(uWorld) * aNormal);
-  vec3 l = -normalize(uLightDir);
-  float d = max(dot(n, l), 0.0);
-  vec3 ambient = vec3(0.45) * uAmbientScale;
-  vDiffuse = vec4(uColor * (ambient + vec3(0.75) * d), uAlpha);
-  vSpec = vec3(0.0);
-  if (uPower > 0.0 && d > 0.0) {
-    vec3 h = normalize(l + normalize(-wp.xyz));
-    vSpec = uSpecular * pow(max(dot(n, h), 0.0), uPower);
+  vec4 col = vec4(uColor, uAlpha);
+  vec3 spec = vec3(0.0);
+  if (uLit) {
+    // normals by the inverse-transpose; NORMALIZENORMALS is FALSE, so no renormalisation
+    vec3 n = transpose(inverse(mat3(uWorld))) * aNormal;
+    vec3 l = normalize(uToLight);
+    float ndl = dot(n, l);
+    vec3 c = uColor * uAmbientScale * (uAmbientRS + uLa);
+    if (ndl > 0.0) {
+      c += uColor * uLd * ndl;
+      if (uPower > 0.0) {
+        vec3 h = normalize(l + normalize(uEye - wp.xyz));
+        float ndh = dot(n, h);
+        if (ndh > 0.0) spec = uSpecular * uLs * pow(ndh, uPower);
+      }
+    }
+    col = vec4(clamp(c, 0.0, 1.0), uAlpha);
+    spec = clamp(spec, 0.0, 1.0);
   }
+  vDiffuse = col; vDiffuseFlat = col; vSpec = spec; vSpecFlat = spec;
 }`;
 
 const FS = `#version 300 es
 precision highp float;
 in vec4 vDiffuse;
+flat in vec4 vDiffuseFlat;
 in vec3 vSpec;
+flat in vec3 vSpecFlat;
 in vec2 vUV;
+in float vW;
 uniform sampler2D uTex;
 uniform bool uHasTex;
+uniform bool uFlat;         // D3DSHADE_FLAT: colour of the triangle's first vertex
 uniform bool uAlphaSelect;  // D3DTOP_SELECTARG1 for alpha (texture alpha only)
 uniform bool uAlphaTest;    // ALPHAREF 1, ALPHAFUNC GREATEREQUAL
+uniform bool uFog;          // FOGENABLE (scene fog on and the mesh allows it)
+uniform vec3 uFogColor;
+uniform vec2 uFogRange;     // FOGSTART, FOGEND (linear table fog on eye depth)
 out vec4 outColor;
 void main() {
+  vec4 d = uFlat ? vDiffuseFlat : vDiffuse;
+  vec3 sp = uFlat ? vSpecFlat : vSpec;
   vec4 t = uHasTex ? texture(uTex, vUV) : vec4(1.0);
-  float a = uAlphaSelect ? t.a : t.a * vDiffuse.a;
+  float a = uAlphaSelect ? t.a : t.a * d.a;
   if (uAlphaTest && a * 255.0 < 0.5) discard;
-  outColor = vec4(t.rgb * vDiffuse.rgb + vSpec, a);
+  vec3 c = t.rgb * d.rgb + sp;
+  if (uFog) {
+    float f = clamp((uFogRange.y - vW) / max(uFogRange.y - uFogRange.x, 1e-6), 0.0, 1.0);
+    c = mix(uFogColor, c, f);
+  }
+  outColor = vec4(c, a);
 }`;
+
+const DEFAULT_LIGHTING = d3dLighting(DEFAULT_SCENE_LIGHT);
 
 export interface TextureSource {
   /** RGBA8 texels in the exe's memory order (row 0 first), or undefined if unavailable. */
@@ -69,6 +101,7 @@ interface GpuPrim {
   count: number;
   list: boolean;
   cull: number;
+  smooth: boolean;
 }
 interface GpuMesh {
   state: MeshState;
@@ -91,7 +124,11 @@ export interface DrawOptions {
   proj: Mat4;
   lit: boolean;
   culling: boolean;
-  lightDir: [number, number, number];
+  /** Direct3D lighting/fog state (see @ttotd/formats scenelight); defaults to the exe's reset values. */
+  lighting?: D3DLighting;
+  /** World-space eye (for specular and fog depth). */
+  eye?: [number, number, number];
+  fog?: { color: [number, number, number] } | false;
   /** Replace every mesh's material colour (the exe's per-model colour override, FUN_00489140). */
   colorOverride?: [number, number, number];
 }
@@ -111,7 +148,8 @@ export class Renderer {
     if (!gl) throw new Error('WebGL2 is not available in this browser');
     this.gl = gl;
     this.prog = this.link(VS, FS);
-    for (const n of ['uWorld', 'uView', 'uProj', 'uLightDir', 'uColor', 'uAlpha', 'uAmbientScale', 'uSpecular', 'uPower', 'uLit', 'uTex', 'uHasTex', 'uAlphaSelect', 'uAlphaTest']) {
+    for (const n of ['uWorld', 'uView', 'uProj', 'uLit', 'uAmbientRS', 'uLd', 'uLs', 'uLa', 'uToLight', 'uEye', 'uColor', 'uAlpha', 'uAmbientScale', 'uSpecular', 'uPower',
+      'uTex', 'uHasTex', 'uFlat', 'uAlphaSelect', 'uAlphaTest', 'uFog', 'uFogColor', 'uFogRange']) {
       this.u[n] = gl.getUniformLocation(this.prog, n);
     }
   }
@@ -145,20 +183,26 @@ export class Renderer {
     const meshes: GpuMesh[] = [];
     for (const m of models) {
       for (const mesh of m.meshes) {
-        const byCull = new Map<number, number[]>();
+        // Batch per (cull mode, shade mode) into triangle lists. Each triangle keeps D3D's winding and
+        // is rotated so D3D's *first* vertex (the flat-shading colour source) is last — GL's provoking
+        // vertex. Strip triangle i is (i, i+1, i+2) for even i and (i, i+2, i+1) for odd i.
+        const groups = new Map<string, { cull: number; smooth: boolean; data: number[] }>();
         for (const p of mesh.prims) {
           const cull = CULL_TABLE[p.cull]!;
-          let out = byCull.get(cull);
-          if (!out) byCull.set(cull, (out = []));
+          const key = `${cull}|${p.smooth}`;
+          let g = groups.get(key);
+          if (!g) groups.set(key, (g = { cull, smooth: p.smooth, data: [] }));
+          const out = g.data;
           const v = p.vertices, n = v.length / 8;
-          const push = (i: number) => { for (let c = 0; c < 8; c++) out!.push(v[i * 8 + c]!); };
-          if (p.list) for (let i = 0; i < n; i++) push(i);
+          const push = (i: number) => { for (let c = 0; c < 8; c++) out.push(v[i * 8 + c]!); };
+          const tri = (a: number, b: number, c: number) => { push(b); push(c); push(a); };
+          if (p.list) for (let i = 0; i + 2 < n; i += 3) tri(i, i + 1, i + 2);
           else for (let i = 0; i + 2 < n; i++) {
-            if (i & 1) { push(i + 1); push(i); push(i + 2); } else { push(i); push(i + 1); push(i + 2); }
+            if (i & 1) tri(i, i + 2, i + 1); else tri(i, i + 1, i + 2);
           }
         }
         const prims: GpuPrim[] = [];
-        for (const [cull, data] of byCull) {
+        for (const { cull, smooth, data } of groups.values()) {
           if (!data.length) continue;
           const vao = gl.createVertexArray()!;
           const buf = gl.createBuffer()!;
@@ -173,7 +217,7 @@ export class Renderer {
           gl.vertexAttribPointer(2, 2, gl.FLOAT, false, 32, 24);
           bufs.push(buf);
           vaos.push(vao);
-          prims.push({ vao, buf, count: data.length / 8, list: true, cull });
+          prims.push({ vao, buf, count: data.length / 8, list: true, cull, smooth });
         }
         meshes.push({
           state: meshState(mesh),
@@ -247,8 +291,16 @@ export class Renderer {
     gl.uniformMatrix4fv(this.u.uWorld!, false, o.world);
     gl.uniformMatrix4fv(this.u.uView!, false, o.view);
     gl.uniformMatrix4fv(this.u.uProj!, false, o.proj);
-    gl.uniform3fv(this.u.uLightDir!, o.lightDir);
+    const L = o.lighting ?? DEFAULT_LIGHTING;
     gl.uniform1i(this.u.uLit!, o.lit ? 1 : 0);
+    gl.uniform3fv(this.u.uAmbientRS!, L.ambient);
+    gl.uniform3fv(this.u.uLd!, L.lightDiffuse);
+    gl.uniform3fv(this.u.uLs!, L.lightSpecular);
+    gl.uniform3fv(this.u.uLa!, L.lightAmbient);
+    gl.uniform3fv(this.u.uToLight!, L.toLight);
+    gl.uniform3fv(this.u.uEye!, o.eye ?? [0, 0, -1000]);
+    gl.uniform2f(this.u.uFogRange!, L.fogStart, L.fogEnd);
+    gl.uniform3fv(this.u.uFogColor!, o.fog ? o.fog.color : [0, 0, 0]);
     gl.uniform1i(this.u.uTex!, 0);
     gl.activeTexture(gl.TEXTURE0);
     gl.enable(gl.DEPTH_TEST);
@@ -272,6 +324,7 @@ export class Renderer {
         gl.uniform1f(this.u.uAmbientScale!, m.ambientScale);
         gl.uniform3fv(this.u.uSpecular!, m.specular);
         gl.uniform1f(this.u.uPower!, m.power);
+        gl.uniform1i(this.u.uFog!, o.fog && s.fogEnable ? 1 : 0);
         for (const p of m.prims) {
           if (!o.culling || p.cull === Cull.NONE) gl.disable(gl.CULL_FACE);
           else {
@@ -282,6 +335,7 @@ export class Renderer {
             gl.cullFace(gl.BACK);
             gl.frontFace(p.cull === Cull.CCW ? gl.CW : gl.CCW);
           }
+          gl.uniform1i(this.u.uFlat!, p.smooth ? 0 : 1);
           gl.bindVertexArray(p.vao);
           gl.drawArrays(p.list ? gl.TRIANGLES : gl.TRIANGLE_STRIP, 0, p.count);
         }

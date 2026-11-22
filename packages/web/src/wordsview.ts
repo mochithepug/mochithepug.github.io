@@ -176,7 +176,7 @@ function draw() {
         const g = letterGpu(L.modelId);
         if (!g) continue;
         const world = mul(scaling(L.scaleX, L.scaleY, L.scaleX), translation(L.x, L.y, 0));
-        r.draw(g, ctx.letterTex, { world, view: identity(), proj, lit: false, culling: false, lightDir: [0, 0, 1], colorOverride: line.color });
+        r.draw(g, ctx.letterTex, { world, view: identity(), proj, lit: false, culling: false, colorOverride: line.color });
       }
     }
     // Placeholder frame around the text block (CSS overlay, in 640×480 coordinates).

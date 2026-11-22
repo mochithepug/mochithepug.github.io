@@ -145,6 +145,23 @@
           <label>Stage <select id="stg-select"></select></label>
           <div class="muted small" id="stg-files-head">Files</div>
           <div id="stg-file-list"></div>
+          <details id="stg-light" open>
+            <summary>Scene light &amp; fog</summary>
+            <p class="muted tiny">The game's inputs (exe reset values). Each scene's real values are set by the event script — coming in M9.</p>
+            <div class="light-grid">
+              <label>colour R <input id="sl-r" type="range" min="0" max="1.5" step="0.01" value="1" /></label><span id="sl-r-v" class="mono"></span>
+              <label>colour G <input id="sl-g" type="range" min="0" max="1.5" step="0.01" value="1" /></label><span id="sl-g-v" class="mono"></span>
+              <label>colour B <input id="sl-b" type="range" min="0" max="1.5" step="0.01" value="1" /></label><span id="sl-b-v" class="mono"></span>
+              <label>intensity <input id="sl-i" type="range" min="0" max="1.5" step="0.01" value="1" /></label><span id="sl-i-v" class="mono"></span>
+              <label>light pitch <input id="sl-p" type="range" min="-90" max="90" step="1" value="0" /></label><span id="sl-p-v" class="mono"></span>
+              <label>light yaw <input id="sl-y" type="range" min="-180" max="180" step="1" value="0" /></label><span id="sl-y-v" class="mono"></span>
+              <label class="inline"><span><input id="sl-fog" type="checkbox" /> fog</span></label><span></span>
+              <label>fog start <input id="sl-fs" type="range" min="-500" max="2000" step="10" value="0" /></label><span id="sl-fs-v" class="mono"></span>
+              <label>fog end <input id="sl-fe" type="range" min="10" max="4000" step="10" value="1000" /></label><span id="sl-fe-v" class="mono"></span>
+              <label>fog colour <input id="sl-fc" type="color" value="#000000" /></label><span></span>
+            </div>
+            <button id="sl-reset" class="small secondary">reset to exe defaults</button>
+          </details>
         </aside>
         <section id="stg-view">
           <div id="stg-toolbar">

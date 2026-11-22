@@ -11,3 +11,5 @@ export * from './character.ts';
 export * from './font.ts';
 export * from './words.ts';
 export * from './camera.ts';
+export * from './scenelight.ts';
+export * from './dialogue.ts';

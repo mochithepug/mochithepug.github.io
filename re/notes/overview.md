@@ -248,6 +248,70 @@ then re-analysis: **920 functions recovered, coverage 92 %** (3 261 functions de
 - Device defaults (`device_state_init`): ZENABLE, ALPHAREF 1 / GE, COLORVERTEX 0, COLORKEYBLEND 0,
   diffuse/specular/ambient/emissive material source = material, CULL none, Gouraud — relevant for 7c.
 
+## Lighting & fog (M7c)
+
+- Scene inputs (updated each frame by `scene_light_update` @0044fee0): light colour `g_scene_light_colour`,
+  intensity `g_scene_light_intensity`, direction from two Sega angles (`g_scene_light_pitch/yaw` →
+  `light_dir_from_angles`: (0,0,1)·Rx(pitch)·Ry(yaw), then into camera space = D3D world space, because the
+  game folds its camera into WORLD), fog start/end `g_scene_fog_start/end`, fog colour. Set by game and
+  event code (not found as direct pointers in the event tables → event commands; M9).
+- `light_setup_single`: s = colour × intensity; AMBIENT = trunc(s·255) per channel; light 0 directional,
+  diffuse = specular = s × 1.4, light ambient = colour × 0.3; lights 1–15 off.
+- Device defaults (`device_state_init`): LIGHTING on, COLORVERTEX 0, material sources = material, local viewer
+  (D3D7 default), NORMALIZENORMALS off, SPECULARENABLE on, Gouraud (per-primitive flat via prim flags).
+- Fog: LINEAR; **table fog** if the device supports it (caps bit @00849104 & 0x100) else vertex fog;
+  FOGSTART/FOGEND = min/max(2·start, 2·end); FOGCOLOR via `fog_set_colour`; per mesh FOGENABLE = !TSP bit 23.
+  The 129-entry table `fog_set` also builds is a Dreamcast leftover (PowerVR fog table), not used by D3D.
+- Known examples: one mode sets colour (1, 0.2, 0.1) and fog −600..1800; boss scenes aim the light from the
+  boss with tint (1, 0.78, 0.57).
+- Port: `packages/formats/src/scenelight.ts`; renderer implements the D3D7 lighting equation (ambient =
+  Ma·(Ga + La), diffuse = Md·Ld·max(N·L,0), specular with half-vector and local viewer, clamped; normals by
+  inverse-transpose without renormalising), flat shading (D3D first vertex), linear W-based table fog.
+
+## Dialogue: voices & subtitles (found while answering a user question)
+
+- `say(dialogueId)` @004239a0: variant by player character (@00a39540: James / Gary / two players) via
+  `g_dialogue_variants` → speech record `g_speech` (duration in 60 Hz frames, voice sound id, Japanese
+  subtitle image) → plays the voice and starts `subtitle_task`, which shows up to 4 lines from
+  `g_speech_lines` → `g_subtitle_lines` (text + "next line when remaining < N").
+- Example: dialogue 1 = "We're meeting G over there.", 120 frames, separate James/Gary voices (01_J / 01_GA);
+  dialogue 3 = two lines, 420 frames, switching at 130 remaining. Port: `packages/formats/src/dialogue.ts`.
+- Open: sound id (e.g. 0x20000182) → WAV file mapping; which dialogue plays when = event script (M9).
+
+## Skippable scenes & the "skip" sign (found while answering a user question)
+
+- The sign is not a string: it is **sprite 0x20F** → texture set `scr_common.bin` (set 0x164) texture 23,
+  256×32, global texture id 0x752. Sprite tables: `g_sprite_set` @005c1258 (set index per sprite id,
+  0xF74 ids) and `g_sprite_tex` @005c5028 (texture id per sprite id); drawn by `sprite_draw` @004940a0
+  → FUN_00493cb0 → FUN_004c4e40.
+- Drawn by `skip_task` @00423da0 (started by FUN_00423d80) at **x = 384, y = 18** (640×480 screen), depth
+  0.99, scale 1; **blinks**: visible while `frame % 60 < 45` (45 on / 15 off); hidden when
+  DAT_00a3e760 == 2 (mode not yet identified).
+- The event script turns skipping on/off with **event opcode 0x2C** (`evt_op_skippable` @0044f900, one
+  u32 argument; script pointer DAT_00a39668). Opcode table `g_evt_ops` @005a2a4c (117 entries).
+  On: DAT_00a11a38 = 1. Enter (input bit 8 for P1, 0x80000 for P2, FUN_004840a0) sets DAT_00a10c18; the
+  task then sets the skip flags DAT_00a11a14 / DAT_00a1112c (subtitles stop) and calls FUN_00496670.
+- `evt/*.bin` are **stored raw** (not LZ) and contain Dreamcast RAM pointers (0x0CEBxxxx), so they need
+  relocation (M9). Stage 1 has **5 skippable scenes**: 0x2C on/off at offsets 0x24C/0x268, 0x468/0x530,
+  0xF18/0x102C, 0x119C/0x1210, 0x64BC/0x6654. Each "on" follows the same command `… 0A 0CEB5854 FFFFFFFF`.
+
+## Reference observations from the original game (user)
+
+- **Stage 1 opening** (from a gameplay video of the original): camera path 0 (aerial fly-over) → **chapter
+  title card** → camera path 1. Consistent with the data: path 0 has no geometric continuation (a cut).
+- **Chapter title card** = 2D overlay from `tex/scr_chapter_st1` (9 textures, 4-bit palette, 2D-set palette
+  rule): clean serif "The First Chapter" / "A Prelude", grainy copies, dripping scrawled versions and
+  "序曲"; the game overlays and jitters these layers (doubled, shaky text — `gameplay/cutscene/1/1.png`).
+  One set per stage (`scr_chapter_st1`…`st6`). Effect code to be traced in M9b. Stays ≈3 s (user).
+- **Path 1** carries the first line, subtitle "We're meeting G over there." — the first subtitle string in
+  the exe (@0059b294); voice `sound/voice/st1/01_J.wav` (James) / `01_GA.wav` (Gary), chosen by player
+  character (the subtitle table has James/Gary variants too).
+- **Cut scene between path 6 and path 7** (user). Path 6 ends exactly where path 7 starts, so the route is
+  paused for the scene and resumes in place; Stage 1's standalone shots (paths 16–22) are candidates for
+  that scene's camera cuts.
+- **Cut scenes show "Press the Enter key to skip"** in the top-right corner (user) — found in the exe, see
+  "Skippable scenes" above.
+
 ## How these claims are checked
 
 `packages/formats/test/notes.test.ts` re-checks the notes against the user's own install

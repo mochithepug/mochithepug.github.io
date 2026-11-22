@@ -136,3 +136,36 @@
 004c15c0	fn	mtx_invert	4×4 inverse
 004c1390	fn	mtx_transform_dir	v × top (3×3)
 005eb8f8	data	g_d3d_view_flip	fixed D3D view matrix diag(1,1,−1,1)
+004c2a80	fn	light_defaults	light colour (1,1,1), intensity 1, direction +z
+004c2b00	fn	light_set_intensity	g 0x0087A74C
+004c2b30	fn	light_set_colour	g 0x0087A740/744/748
+004c2b70	fn	light_set_direction	g 0x0087A750.. = −v
+0046d780	fn	light_dir_from_angles	(0,0,1) · Rx(pitch) · Ry(yaw) → world dir, then into camera space
+0044fee0	fn	scene_light_update	per frame: fog (FUN_00451470 with start/end @00a11af0/af4), colour @00a11d00.., intensity @00a11d0c
+00451470	fn	fog_set	129-entry fog table + FOGSTART/FOGEND = min/max(2·start, 2·end)
+004c2a10	fn	fog_set_range	SetRenderState(FOGSTART/FOGEND)
+004c2940	fn	fog_set_colour	SetRenderState(FOGCOLOR)
+00471080	fn	light_boss_spot	boss scenes: light aimed from a boss position, orange tint (1, 0.78, 0.57)
+004518e0	fn	mode_light_init	one mode's lighting: colour (1, 0.2, 0.1), fog −600..1800
+00a11d00	data	g_scene_light_colour	f32 r, g, b
+00a11d0c	data	g_scene_light_intensity	f32
+00a11af0	data	g_scene_fog_start	f32 (device gets ×2)
+00a11af4	data	g_scene_fog_end	f32 (device gets ×2)
+00a11ad8	data	g_scene_light_pitch	int Sega angle
+00a11adc	data	g_scene_light_yaw	int Sega angle
+004239a0	fn	say	play dialogue id: variant by player (@00a39540) → speech record → voice (FUN_00495660) + subtitle task
+004238c0	fn	subtitle_task	per-frame subtitle: countdown, advance line when remaining < line.nextBelow, draw text (or JP image)
+0059ac58	data	g_dialogue_variants	i16[id*3 + variant] speech id (A James, B Gary, C two players)
+00599338	data	g_speech	16-byte records: i16 JP subtitle image, i16 duration frames, ?, u32 voice sound id @+12
+005a0fd0	data	g_speech_lines	i16[speech*4 + k] subtitle line index
+0059b210	data	g_subtitle_lines	64-byte records: u32 ?, text @+4, i16 next-line threshold @+0x3E
+005c1258	data	g_sprite_set	i32[sprite id] texture set index (0xF74 ids)
+005c5028	data	g_sprite_tex	u32[sprite id] global texture id
+004940a0	fn	sprite_draw	(sprite, x, y, z, sx, sy, ?, ?, flags) 2D sprite on the 640x480 screen
+00423d80	fn	skip_task_start	starts skip_task (clears the Enter-pressed flag)
+00423da0	fn	skip_task	while skippable: Enter → skip scene; draws sprite 0x20F "Press the Enter key to skip" at (384,18), blinking 45/15 frames
+0044f900	fn	evt_op_skippable	event opcode 0x2C: arg 1 = scene skippable on, 0 = off
+005a2a4c	data	g_evt_ops	event opcode handler table (117 entries)
+00a39668	data	g_evt_ptr	current event script pointer
+00a11a38	data	g_skippable	scene can be skipped (set by event opcode 0x2C)
+00a10c18	data	g_skip_pressed	Enter pressed during a skippable scene

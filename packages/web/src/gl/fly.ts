@@ -16,13 +16,12 @@ export class FlyCamera {
     return [Math.sin(this.yaw) * Math.cos(this.pitch), Math.sin(this.pitch), Math.cos(this.yaw) * Math.cos(this.pitch)];
   }
 
-  matrices(aspect: number): { view: Mat4; proj: Mat4; lightDir: [number, number, number] } {
+  matrices(aspect: number): { view: Mat4; proj: Mat4 } {
     const d = this.dir();
     const at = this.pos.map((v, k) => v + d[k]!) as [number, number, number];
     return {
       view: gameLookAt(this.pos, at), // the game's own view convention (incl. its z-flip)
       proj: perspectiveFovLH(this.fovY, aspect, this.near, this.far),
-      lightDir: [0.3, -1, 0.5],
     };
   }
 

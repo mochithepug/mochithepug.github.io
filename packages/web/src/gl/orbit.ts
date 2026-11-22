@@ -1,5 +1,11 @@
 /** Mouse orbit camera (left-handed, y up) producing D3D-style view/projection matrices. */
-import { gameLookAt, perspectiveFovLH, type Mat4 } from '@ttotd/formats';
+import { d3dLighting, DEFAULT_SCENE_LIGHT, gameLookAt, lookAngles, perspectiveFovLH, type D3DLighting, type Mat4 } from '@ttotd/formats';
+
+/** Viewer lighting: the game's lighting formula with the light coming from the camera (slightly above). */
+export function viewerLighting(eye: number[], target: number[]): D3DLighting {
+  const [pitch, yaw] = lookAngles(eye[0]! - target[0]!, eye[1]! - target[1]! + Math.hypot(eye[0]! - target[0]!, eye[2]! - target[2]!) * 0.4, eye[2]! - target[2]!);
+  return d3dLighting({ ...DEFAULT_SCENE_LIGHT, color: [0.55, 0.55, 0.55], pitch, yaw });
+}
 
 export const FOV = (45 * Math.PI) / 180;
 
@@ -26,13 +32,13 @@ export class OrbitCamera {
     ];
   }
 
-  matrices(aspect: number): { view: Mat4; proj: Mat4; lightDir: [number, number, number] } {
+  matrices(aspect: number): { view: Mat4; proj: Mat4; lighting: D3DLighting; eye: [number, number, number] } {
     const eye = this.eye();
-    const dir = this.target.map((v, k) => v - eye[k]!);
     return {
       view: gameLookAt(eye, this.target), // the game's own view convention (incl. its z-flip)
       proj: perspectiveFovLH(FOV, aspect, Math.max(this.dist - this.radius * 4, this.dist / 1000), this.dist + this.radius * 4),
-      lightDir: [dir[0]! + this.dist * 0.3, dir[1]! - this.dist * 0.5, dir[2]!],
+      lighting: viewerLighting(eye, this.target),
+      eye,
     };
   }
 

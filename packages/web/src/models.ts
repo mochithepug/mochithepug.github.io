@@ -13,6 +13,7 @@ import {
 } from '@ttotd/formats';
 import type { GameFS } from './ingest/gamefs';
 import { gameLookAt, identity, perspectiveFovLH } from '@ttotd/formats';
+import { viewerLighting } from './gl/orbit';
 import { Renderer, type GpuModel, type TextureSource } from './gl/renderer';
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
@@ -243,14 +244,14 @@ function draw() {
     const eye = eyePos();
     const view = gameLookAt(eye as [number, number, number], c.target);
     const proj = perspectiveFovLH(FOV, w / h, Math.max(c.dist - c.radius * 4, c.dist / 1000), c.dist + c.radius * 4);
-    const dir = c.target.map((v, k) => v - eye[k]!);
     ctx.renderer.draw(ctx.gpu, ctx.texSource, {
       world: identity(),
       view,
       proj,
       lit: $<HTMLInputElement>('mdl-lit').checked,
       culling: $<HTMLInputElement>('mdl-cull').checked,
-      lightDir: [dir[0]! + c.dist * 0.3, dir[1]! - c.dist * 0.5, dir[2]!],
+      lighting: viewerLighting(eye, c.target),
+      eye: eye as [number, number, number],
     });
   });
 }
