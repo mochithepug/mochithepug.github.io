@@ -118,3 +118,11 @@
 00497680	fn	mode_init_example	a mode set-up queuing model/file/texture loads (DAT_00a10c08 = 10)
 00838d10	data	g_load_queue	64 × 16-byte requests {type, ?, id, state}
 005e98f0	data	g_load_dispatch	load request type → dispatcher
+0040e560	fn	cam_open	open cam\<name> for a camera slot (names @004f3abc, path-id lists @004ddc44, counts @004ddca4)
+0040e6e0	fn	cam_register	g_cam_paths[id] = file + offsetTable[k]
+0040e7c0	fn	cam_curve_eval	cubic Hermite curve: keys {t, value, outTangent, inTangent}, padded binary search
+0040e8b0	fn	cam_sample_lookat	path → eye xyz (ch 0-2), target xyz (ch 3-5), roll (ch 6, int, if flag @00a110b0)
+0040e9a0	fn	cam_sample_angles	path → pos xyz + 3 int angles
+0040ce90	fn	cam_update	camera update: samples path DAT_00a11a18 at time DAT_00a14a30 → eye @00a149e0, target @00a149f8
+0040e1b0	fn	cam_set_lookat	eye/target → angles via FUN_0040bd10 (stored at eye+3, +4), roll at +5
+005f1cd8	data	g_cam_paths	{ptr, state}[pathId]

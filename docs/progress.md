@@ -187,3 +187,8 @@ winding; render identical to within scattered single pixels); `gl/fly.ts` free-f
 `load_request_file` LZ whole files); Stage 1 = 11 world-space files meeting seamlessly + backdrop
 (`st1_1/1b`, several concentric wall rings — likely variants chosen at runtime).
 **Verified:** screenshots of the assembled town; user checked the Stage tab and the select-all toggle.
+
+### 7b — Camera path (in progress, paused 2026-11-22)
+Format of `cam/*.bin` decoded (see re/notes/overview.md "Camera paths"); nothing implemented yet.
+Next: port `cam_curve_eval` + path sampling to `packages/formats/src/camera.ts`, trace FUN_0040bd10 and
+the FOV/projection, then a "play camera path" mode in the Stage tab.

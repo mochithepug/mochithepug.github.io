@@ -217,6 +217,21 @@ then re-analysis: **920 functions recovered, coverage 92 %** (3 261 functions de
   variants shown one at a time); `etc_1_*` are small local-space objects placed at runtime.
 - Open: which pieces / backdrop variants are loaded when (likely driven by the event tables).
 
+## Camera paths (M7b — in progress)
+
+- `cam/*.bin` (slots: names @004f3abc; per slot path-id list @004ddc44, count @004ddca4; per-id slot
+  @004ddcd4): u32 offset per path, then data area at `4 + count·4` (a 0xFFFFFFFF follows the table).
+  Path = 7 i32 channel indices (×4 = byte offset into the data area): 0–2 eye xyz, 3–5 look-at xyz,
+  6 roll (int, only if flag @00a110b0).
+- Curve: `u16 capacity (power of 2), u16 searchDepth`, then keys of 4 f32 `{t, value, outTangent,
+  inTangent}`; evaluation (`cam_curve_eval`) = padded binary search for the segment, then cubic Hermite
+  with tangents in per-time-unit (h00·v0 + h10·d·m0 + h01·v1 + h11·d·m1, 3.0 @004dd4c4).
+- `cp_st1.bin`: 23 paths (ids 48–70), 140–800 time units each (probably 60 Hz frames — unverified);
+  positions in Stage 1 world space (path 0 starts high, y≈197; later ones at eye height y≈15–23).
+- Camera state: path id @00a11a18, time (int) @00a14a30 → eye @00a149e0, target @00a149f8, then
+  `cam_set_lookat` (FUN_0040bd10 converts eye−target to angles). Next: FUN_0040bd10, the projection/FOV
+  setup, and which event drives the path sequence.
+
 ## How these claims are checked
 
 `packages/formats/test/notes.test.ts` re-checks the notes against the user's own install
