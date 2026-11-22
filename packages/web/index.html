@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>TTOTD web — asset tools</title>
+    <link rel="stylesheet" href="/src/style.css" />
+  </head>
+  <body>
+    <header>
+      <h1>TTOTD web <small>asset tools</small></h1>
+      <p class="hint">Pick your own game folder (the one containing <code>Tod_e.exe</code>). Files are read locally in your browser — nothing is uploaded.</p>
+      <div class="actions">
+        <button id="pick">Open game folder…</button>
+        <button id="reopen" hidden></button>
+        <input id="dirinput" type="file" webkitdirectory multiple hidden />
+        <span id="busy" class="muted"></span>
+      </div>
+    </header>
+    <nav id="tabs" hidden>
+      <button data-tab="files" class="tab active">Files</button>
+      <button data-tab="textures" class="tab">Textures</button>
+    </nav>
+    <main id="tab-files">
+      <section id="report" hidden></section>
+      <section id="player" hidden></section>
+      <section id="hex" hidden></section>
+      <section id="browser" hidden>
+        <input id="filter" type="search" placeholder="Filter files… (e.g. st1, boss, .wav)" />
+        <div id="categories"></div>
+      </section>
+    </main>
+    <main id="tab-textures" class="wide" hidden>
+      <div id="tex-layout">
+        <aside id="tex-sets">
+          <input id="tex-filter" type="search" placeholder="Filter sets… (e.g. zom, st1, boss)" />
+          <div id="tex-set-list"></div>
+        </aside>
+        <section id="tex-view">
+          <div id="tex-toolbar">
+            <strong id="tex-title">Pick a texture set</strong>
+            <span id="tex-info" class="muted"></span>
+            <span class="spacer"></span>
+            <label>Zoom <select id="tex-zoom"><option value="1">1×</option><option value="2" selected>2×</option><option value="4">4×</option></select></label>
+            <label title="Textures are stored bottom-up (the game's texture coordinates count from the bottom). Untick to see raw memory order."><input id="tex-flip" type="checkbox" checked /> upright (as in game)</label>
+            <label><input id="tex-alpha" type="checkbox" checked /> show transparency</label>
+          </div>
+          <div id="tex-grid"></div>
+        </section>
+      </div>
+    </main>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

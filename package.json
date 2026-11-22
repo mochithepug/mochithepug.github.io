@@ -1,0 +1,20 @@
+{
+  "name": "ttotd-web",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "vite packages/web",
+    "build": "npm run typecheck && vite build packages/web",
+    "test": "vitest run",
+    "typecheck": "tsc -p packages/formats && tsc -p packages/web --noEmit"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.6",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.8",
+    "vitest": "^5.1.1"
+  }
+}

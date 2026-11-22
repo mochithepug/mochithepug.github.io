@@ -1,0 +1,36 @@
+# address	kind	name	note   (kind: fn = function, data = global)
+0044fe20	fn	lz_decompress	LZSS-style decompressor for pol/ tex/ (src after u32 size header, dst)
+00487fd0	fn	load_common_pol_tex	loads pol\common.bin + tex\common.bin, decompresses, registers models/textures
+00494160	fn	load_tex_set	loads tex\<name> by index (table @004f3160), decompresses, uploads textures
+0047d620	fn	load_comevtbl	loads evt\comevtbl.bin into 009e6400 and rebases pointers
+0047d6c0	fn	evt_rebase_pointers	for each u32: if (v & 0xfff80000) == 0x0ce80000 then v += 0xf3b30c00
+0047d700	fn	load_stage_evtbl	loads evt\<stage table> (index table @005b9130, names @004f3b60), rebases
+0047d7b0	fn	load_coli	loads coli\<name> (names @004f3ba4) into 009e6400 + 0x6000 (+0x600 if idx != 0)
+004539d0	fn	load_font	reads word\font.bin (0x138000 bytes)
+004b4100	fn	load_word_list	reads word\<Z...>.bin (names @004f3bc8), XOR 0x41, into 00839d28 (max 0xd000)
+004af060	fn	save_read	reads 4 x 0xb00-byte save blocks from disguised files (table @005ea000)
+004af0e0	fn	save_write	writes the save blocks back and restores file times
+004bdf40	fn	win_main_loop	PeekMessage pump; calls frame_pace when idle
+004bd790	fn	frame_pace	60 Hz pacing: 16.6667 ms target, max 4 frame skip, QPC based
+004b81e0	fn	dinput_init	DirectInputCreateEx
+004b8050	fn	keyboard_map	maps DirectInput key state via MapVirtualKeyEx/GetKeyboardLayout
+004bc070	fn	sound_stream_thread	DirectSound streaming (BGM) with SetFilePointer/ReadFile
+004be890	fn	read_ini	GetPrivateProfileInt/String settings
+004c62cc	fn	crt_rand	MSVC rand(): s = s*0x343fd + 0x269ec3; return (s >> 16) & 0x7fff
+004c62bf	fn	crt_srand	MSVC srand()
+00484b60	fn	seed_rng	srand(FUN_0047ed90() ? 0 : g_rng_counter)
+005eb640	data	g_frame_ms	f32 16.6667
+005eb638	data	g_max_frameskip	u32 4
+00a11a48	data	g_rng_counter	seed source for seed_rng
+005ea000	data	g_save_file_names	4 x char* (pol/tv2.bin, pol/komono_0.bin, tex/scr_tod_itm_itamidome2.bin, pol/bg_adv19.bin)
+004bf400	fn	tex_upload	decode PVR texture (layout/format from desc type) into a D3D surface
+004bfce0	fn	tex_register	register texture desc of a set (creates surface once per id; palette bank via 005eb868)
+004bfb10	fn	tex_register_model	walk model texture refs and create their textures (common.bin path)
+004bfe40	fn	palette_upload	copy palette records (16 x ARGB1555 each) into palette RAM banks
+00493740	fn	tex_palette_bank	switch(set) via byte table @493984 + jump table @493910 → palette bank - 1
+004f3160	data	g_tex_set_names	char*[set] file names under tex\ (index 0 unused)
+0058c0e0	data	g_tex_set_descs	TexDesc*[set]: {i16 w, i16 h, u32 type, u32 offset, u32 id}
+0058c974	data	g_tex_set_counts	i16[set]
+0058ff68	data	g_pvr_to_d3d_fmt	pixel format → D3D format index (5=1555, 2=565, 6=4444, 8=unsupported)
+005b9a80	data	g_palette_records	12-byte records {i16, i16 n=16, u32 ptr, i32 count}
+005eb868	data	g_cur_palette_bank	-1 = default bank 0

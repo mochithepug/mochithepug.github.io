@@ -1,0 +1,18 @@
+node_modules/
+dist/
+.DS_Store
+*.log
+
+# Bring-your-own-data: never commit original or extracted game data.
+*.bin
+*.wav
+*.exe
+*.acm
+*.pak
+data/
+extracted/
+dumps/
+
+# Ghidra project + decompiler output are derived from the game binary
+re/ghidra-project/
+re/out/
