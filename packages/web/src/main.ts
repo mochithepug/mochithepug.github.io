@@ -20,6 +20,7 @@ import { initProps, redraw as redrawProps } from './propsview';
 import { initWords, redrawWords } from './wordsview';
 import { initStage, redraw as redrawStage } from './stageview';
 import { initEvents } from './eventsview';
+import { startGame } from './game';
 
 // --- tiny DOM helpers --------------------------------------------------------------------
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
@@ -62,6 +63,8 @@ async function load(fs: GameFS) {
     initWords(fs, params).catch(showError);
     initStage(fs, params).catch(showError);
     initEvents(fs, params).catch(showError);
+    $('play-game').hidden = false;
+    if (params.get('play') === 'game') startGame(fs).catch(showError);
   }
   if (params.get('tab')) showTab(params.get('tab')!);
 }
@@ -89,6 +92,10 @@ if (params.has('dev')) {
 }
 
 // --- tabs ------------------------------------------------------------------------------------
+$('play-game').addEventListener('click', () => {
+  if (gamefs) startGame(gamefs).catch(showError);
+});
+
 for (const b of document.querySelectorAll<HTMLButtonElement>('#tabs .tab')) {
   b.addEventListener('click', () => showTab(b.dataset.tab!));
 }

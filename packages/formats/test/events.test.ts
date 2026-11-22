@@ -82,8 +82,17 @@ describe.skipIf(!dir)('event player (Stage 1 block 0)', async () => {
     const common = new EventFile(new Uint8Array(readFileSync(join(dir!, 'evt', 'comevtbl.bin'))), EVT_COM_BASE);
     const p = new EventPlayer(ef, { rules: readBlockRules(pe, 0), dialogue: (id) => readDialogue(pe, id, 0) ?? readDialogue(pe, id, 2), common, followBlocks: false, holdFrames: 60 });
     p.start(0);
-    for (let i = 0; i < 60 * 120 && !p.done; i++) p.step();
+    // the chapter title card (type 0x60) sets flag 248 after 0xB4 frames; op 0x45 248 holds path 49 until then
+    let card = -1;
+    for (let i = 0; i < 60 * 120 && !p.done; i++) {
+      p.step();
+      if (card < 0 && p.spawns.some((s) => s.type === 0x60)) card = p.frame;
+      if (card >= 0 && p.frame - card >= 0xb4) p.flags[248] = 1;
+    }
     expect(p.done).toBe(true);
+    const held = p.log.find((e) => e.text === 'wait for flag 248')!;
+    const path49 = p.log.find((e) => e.text.startsWith('camera path 49'))!;
+    expect(path49.frame - held.frame).toBeGreaterThanOrEqual(0xb4 - 25);
     const order = p.log.filter((e) => e.kind === 'say' || /^camera path|^fight \d/.test(e.text)).map((e) => (e.kind === 'say' ? e.text.split(':')[0] : e.text.split(',')[0]));
     expect(order).toEqual(['camera path 48', 'camera path 49', 'say 1', 'say 2', 'say 3', 'camera path 50', 'say 4', 'camera path 50', 'say 5', 'camera path 50', 'say 6', expect.stringMatching(/^fight 4/)]);
     const say1 = p.log.find((e) => e.text.startsWith('say 1'))!;
@@ -95,6 +104,25 @@ describe.skipIf(!dir)('event player (Stage 1 block 0)', async () => {
     const system = p.spawns.filter((s) => s.pos === undefined);
     expect(positioned.length).toBeGreaterThan(0);
     expect(system.length).toBeGreaterThan(0);
-    expect(positioned[0]!.type).toBe(0x41); // first placed object
+    // first positioned spawn: the players' car (op 0x0B, type 0x26, scene variant 1 at +0x22)
+    expect([positioned[0]!.type, positioned[0]!.hp]).toEqual([0x26, 1]);
+  });
+
+  it('Enter during the opening fly-over skips straight to the end of the scene', () => {
+    const pe = new PeImage(new Uint8Array(readFileSync(join(dir!, 'Tod_e.exe'))));
+    const ef = new EventFile(new Uint8Array(readFileSync(join(dir!, 'evt', 'st1evtbl.bin'))));
+    const common = new EventFile(new Uint8Array(readFileSync(join(dir!, 'evt', 'comevtbl.bin'))), EVT_COM_BASE);
+    const p = new EventPlayer(ef, { rules: readBlockRules(pe, 0), dialogue: (id) => readDialogue(pe, id, 0) ?? readDialogue(pe, id, 2), common, followBlocks: false, holdFrames: 60 });
+    p.start(0);
+    while (!p.skippable) p.step();
+    for (let i = 0; i < 30; i++) p.step();
+    expect(p.skip()).toBe(true);
+    const at = p.frame;
+    while (p.skippable && p.frame < at + 10) p.step();
+    expect(p.skippable).toBe(false);
+    expect(p.skipping).toBe(false);
+    expect(p.frame - at).toBeLessThan(3);
+    expect(p.subtitle).toBeUndefined();
+    expect(p.skip()).toBe(false); // nothing to skip outside a skippable scene
   });
 });

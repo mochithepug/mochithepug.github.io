@@ -247,3 +247,43 @@ line 2.
 camera modes 0x10/0x11/0x12/0x14/0x60 details.
 **Follow-ups (user):** skip sign blinks and shows only in cut scenes; cut-scene letterbox bars (60 px,
 provisional); block dropdown follows playback; `[hidden]` always hides (toolbars' display rules overrode it).
+
+### 9b — Spawn records as markers (2026-11-23) ✅ committed ecff3b0
+**Delivered:** spawn records for ops 0x09 / 0x03 (one player) / 0x07 (two players) / 0x0A; record +0x22 =
+hit points (characters) and +0x24 = skeleton index (both traced in the exe); markers + labels
+(`t30 znsam2 hp100`) in the Stage view's event playback.
+**Tried and reverted (user):** drawing the characters at their spawn points — without the game logic they
+float (some spawn in mid-air and leap down: behaviour 26) or face the wrong way (the unanimated pose), so
+markers only until the logic is ported. Findings (start motion 0x3f5, facing, behaviours, placed-object
+kinds) are in re/notes/overview.md.
+
+## M10 — Stage 1 playable (in progress)
+
+### 10a — Game screen (2026-11-23)
+**Delivered:** ▶ PLAY button (header, once the game folder is open) → full-window game screen
+(`packages/web/src/game.ts`): Stage 1 from block 0 at a fixed 60 Hz, 640×480 picture scaled to the window,
+event-script camera, subtitles, light & fog, blinking skip sign, letterbox; **Enter skips a scene** as the exe
+does (`EventPlayer.skip()`); Esc quits back to the tools. Fights are held 3 s ("Fight — not ported yet").
+`?dev&play=game` starts it directly.
+**Verified:** test — Enter during the opening fly-over reaches the scene's end within 2 frames, no subtitle;
+headless Chrome screenshots: fly-over with the skip sign, Enter → next scene ("We're meeting G over there."),
+Esc → back to the tools.
+**Next:** 10b enemies in the fights.
+
+### 10a+ — The opening car (2026-11-23)
+**Delivered:** event op 0x0B decoded as a spawn (it creates the car, the players, more zombies); object
+paths (`cam/op_stN.bin`, same format as camera paths, 6 channels) with `CameraFile.objectSample` and the
+exe's path lengths; new **`packages/engine`** (ported game logic) with the players' car (type 0x26, variant 1:
+follows object paths 0x11f/0x120 by the camera path, parks and opens its doors on path 50, wheels, steering
+wheel, dust) and the chapter title card's timing (type 0x60 — corrected: it is the title card, not "HUD on");
+the PLAY screen draws the car (models by global id).
+**Verified:** tests — every object-path curve passes through its keys; the car drives on paths 48–49, hides
+for the title card's 0xB4 frames, parks at (−64, 0, 137.5) with the door open on path 50; headless screenshots
+of path 49 (car driving away from the camera) and path 50 (parked, left door open).
+**Not yet:** the daemon on the rooftop and flying over the car (type 0x22, traced — see notes; first
+misnamed "James and Gary"); title card graphics.
+**Fix (user: the car only appeared near the end of path 1):** the script holds path 49 with event op 0x45 248
+(`FUN_0044f7f0`: wait until flag byte DAT_00a396c0[N] is set); 248 = DAT_00a397b8, which the title card sets
+when it ends. The player now implements 0x45 and the title card sets the flag (game screen and Stage view), so
+the scene fades to black for the 3 s card and path 49 starts afterwards with the car beside the camera
+(test + screenshots).

@@ -112,7 +112,17 @@ Each milestone: **deliverable → how you verify**.
   Reference so far: Stage 1 opens path 0 → chapter title card (`scr_chapter_st1` layers) → path 1
   (`gameplay/cutscene/1/1.png`), title ≈3 s; path 1 subtitle "We're meeting G over there." (voice 01_J /
   01_GA); a cut scene between path 6 and path 7 (route resumes in place); cut scenes show the blinking "Press the Enter key to skip" sign top right (sprite 0x20F at (384,18); scenes marked by event opcode 0x2C, 5 in Stage 1).
-- [ ] **M10 — Stage 1 playable.** Event interpreter, Stage 1 enemies, damage, life, items, SE/voice/BGM.
+- [ ] **M10 — Stage 1 playable** (game screen, ▶ PLAY; agreed 2026-11-23: port the game logic step by step,
+  each step playable from the PLAY button). Event interpreter, Stage 1 enemies, damage, life, items,
+  SE/voice/BGM.
+  10a ✅ game screen: PLAY → Stage 1 from block 0 at a fixed 60 Hz (camera, subtitles, light & fog, skip
+  sign, letterbox), Enter skips a scene as the exe does, Esc quits; fights held 3 s.
+  10b: enemies in the fights — type 0x30/0x31 objects with their skeletons, start motion and behaviours
+  (walk, leap down), placed from the spawn records.
+  10c: word boxes and typing (M8 core) — words from the word lists, input matching, kill on completion.
+  10d: enemy attacks, damage and life; game over.
+  10e: placed objects — breakables (kind 4), props and cars; items.
+  10f: sounds — voices with the subtitles, SE, BGM; title card.
   → Play Stage 1 start to end.
 - [ ] **M11 — Stage 1 boss.**
 - [ ] **M12 — Stages 2–6 + bosses** (one milestone per stage).

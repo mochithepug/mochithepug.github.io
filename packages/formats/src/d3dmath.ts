@@ -73,6 +73,17 @@ export function translateLocal(m: Mat4, x: number, y: number, z: number): Mat4 {
   return o;
 }
 
+/** M' = S(x, y, z) · M (FUN_004c2540) */
+export function scaleLocal(m: Mat4, x: number, y: number, z: number): Mat4 {
+  const o = new Float32Array(m);
+  for (let k = 0; k < 4; k++) {
+    o[k] = m[k]! * x;
+    o[4 + k] = m[4 + k]! * y;
+    o[8 + k] = m[8 + k]! * z;
+  }
+  return o;
+}
+
 /** M' = Rx(a) · M, Rx = [[1,0,0],[0,c,s],[0,-s,c]] (D3DXMatrixRotationX) */
 export function rotateXLocal(m: Mat4, a: number): Mat4 {
   const c = Math.cos(a * ANGLE), s = Math.sin(a * ANGLE), o = new Float32Array(m);

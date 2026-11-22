@@ -9,7 +9,10 @@
  * start = end jumps (`FUN_0040db00`); flag 2 stores a path to resume after the fight (`FUN_0040dba0`);
  * waits: 0x41 N continues once N < camera time, 0x41 0 once the shot has < 1 frame left (DAT_00a39468),
  * 0x40 while camera commands are pending (DAT_00a11924); say(); skippable; light & fog (0x20 / 0x18);
- * block order by the exe's rules.
+ * 0x45 N waits until flag byte DAT_00a396c0[N] is set (e.g. 248 = DAT_00a397b8, set when the chapter title card
+ * ends — the owner sets `flags`); block order by the exe's rules; skipping a scene (`skip_task` @00423da0: Enter while skippable sets
+ * DAT_00a11a14 and ends the running path shot; until 0x2C 0 clears it, 0x30 is not queued, the waits
+ * 0x40/0x41/0x42/0x74 pass at once, sounds 0x3A/0x3B are dropped and subtitles end).
  * Approximate (gameplay not ported yet): the fight (camera mode 0x21) lasts `holdFrames`, then the stored path
  * resumes; other camera modes (0x11/0x12/0x14/0x60: screen, player state, view, look-at) finish at once and
  * keep the view; game mode 0 and one player are assumed.
@@ -82,6 +85,10 @@ export class EventPlayer {
   shot?: ActiveShot;
   subtitle?: { speech: Speech; remaining: number; line: number };
   skippable = false;
+  /** Flag bytes DAT_00a396c0[N] that op 0x45 waits for; set by game objects (248: title card over). */
+  readonly flags = new Uint8Array(0x400);
+  /** Skipping the current scene (DAT_00a11a14). */
+  skipping = false;
   light: SceneLight = { ...DEFAULT_SCENE_LIGHT, color: [...DEFAULT_SCENE_LIGHT.color], fogColor: [...DEFAULT_SCENE_LIGHT.fogColor] };
   /** Spawned objects accumulated during playback. */
   spawns: SpawnRecord[] = [];
@@ -106,6 +113,7 @@ export class EventPlayer {
     this.remaining = 0x7fffffff;
     this.subtitle = undefined;
     this.skippable = false;
+    this.skipping = false;
     this.add('flow', `block ${block} starts`);
   }
 
@@ -120,6 +128,17 @@ export class EventPlayer {
       if (f && o !== undefined && o + 4 <= f.data.length) return new DataView(f.data.buffer, f.data.byteOffset).getFloat32(o, true);
     }
     return undefined;
+  }
+
+  /** Enter pressed (`skip_task`): skip the scene if it is skippable. Returns whether a skip started. */
+  skip(): boolean {
+    if (!this.skippable || this.skipping) return false;
+    this.skipping = true;
+    // DAT_00a14a68 (shot end) = DAT_00a14a64 (shot time): the running path shot ends this frame
+    if (this.shot && this.running) this.shot.to = this.counter;
+    this.subtitle = undefined;
+    this.add('skip', 'scene skipped');
+    return true;
   }
 
   /** Advance one 60 Hz frame. */
@@ -176,7 +195,7 @@ export class EventPlayer {
           break;
         case 0x40:
           // FUN_0044f5a0: yield while camera commands are pending (DAT_00a11924)
-          if (this.pendingCamera !== 0) {
+          if (this.pendingCamera !== 0 && !this.skipping) {
             if (!this.yieldFlag) this.add('flow', 'wait for the camera');
             this.yieldFlag = true;
             return;
@@ -186,11 +205,16 @@ export class EventPlayer {
           break;
         case 0x38:
         case 0x3a:
-          this.add('sound', `play sound 0x${(w(1) >>> 0).toString(16)}`);
+          if (op === 0x38 || !this.skipping) this.add('sound', `play sound 0x${(w(1) >>> 0).toString(16)}`);
           advance();
           break;
         case 0x42:
           // FUN_0044f650: reached mid-frame → store N and yield; later frames count down, continue once < 0
+          if (this.skipping) {
+            this.yieldFlag = false;
+            advance();
+            break;
+          }
           if (!this.yieldFlag) {
             this.countdown = w(1);
             this.yieldFlag = true;
@@ -201,9 +225,27 @@ export class EventPlayer {
           this.yieldFlag = false;
           advance();
           break;
+        case 0x45: {
+          // FUN_0044f7f0: reached mid-frame → yield once; later frames continue once the flag is set
+          const n = w(1);
+          if (!this.yieldFlag) {
+            this.yieldFlag = true;
+            this.add('flow', `wait for flag ${n}`);
+            return;
+          }
+          if (!this.flags[n]) return;
+          this.yieldFlag = false;
+          advance();
+          break;
+        }
         case 0x41: {
           // FUN_0044f5e0: reached mid-frame → yield once; later frames check the condition
           const n = w(1);
+          if (this.skipping) {
+            this.yieldFlag = false;
+            advance();
+            break;
+          }
           if (!this.yieldFlag) {
             this.yieldFlag = true;
             this.add('flow', n === 0 ? 'wait until the camera shot ends' : `wait until camera time ${n}`);
@@ -218,7 +260,8 @@ export class EventPlayer {
         case 0x6c:
         case 0x6d: {
           // 0x6C / 0x6D queue only with one / two players (DAT_00a3b844)
-          if (op === 0x30 || (op === 0x6c && this.opts.players === 1) || (op === 0x6d && this.opts.players === 2)) {
+          const mine = op === 0x30 || (op === 0x6c && this.opts.players === 1) || (op === 0x6d && this.opts.players === 2);
+          if (mine && !this.skipping) {
             const mode = w(1);
             const params = Array.from({ length: len / 4 - 2 }, (_, k) => w(2 + k));
             this.queue.push({ mode, params });
@@ -230,13 +273,14 @@ export class EventPlayer {
         case 0x2d: {
           const id = w(1) & 0xffff;
           const speech = this.opts.dialogue(id);
-          if (speech) this.subtitle = { speech, remaining: speech.durationFrames, line: 0 };
+          if (speech && !this.skipping) this.subtitle = { speech, remaining: speech.durationFrames, line: 0 };
           this.add('say', `say ${id}${speech ? `: “${speech.lines.map((l) => l.text).join(' / ')}”` : ''}`);
           advance();
           break;
         }
         case 0x2c:
           this.skippable = w(1) !== 0;
+          if (!this.skippable) this.skipping = false;
           this.add('skip', this.skippable ? 'skippable scene starts (skip sign on)' : 'skippable scene ends');
           advance();
           break;
@@ -278,7 +322,8 @@ export class EventPlayer {
         case 0x03:
         case 0x07:
         case 0x09:
-        case 0x0a: {
+        case 0x0a:
+        case 0x0b: {
           const records = readSpawnRecords(this.ef, this.opts.common, o);
           for (const r of records) {
             this.spawns.push(r);

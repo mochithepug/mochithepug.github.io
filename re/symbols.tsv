@@ -200,3 +200,7 @@
 00450be0	fn	evt_light_fade	opcodes 0x23/0x27: fade light/fog value to target by step per frame
 00450240	fn	fade_step	{active, current, target, step}: move current by step toward target
 00a3b3a0	data	g_light_fades	fade records for light set 0 (16 bytes each, same order as the 0x20 subs)
+0044f310	fn	evt_op_camera	op 0x30: queue a camera command (not while skipping)
+00441d80	fn	enemy30_init	object type 0x30 set-up: motion 0x3f5/0x457, skeleton/kind/behaviour from record +0x24..
+00420050	fn	spawn_record	create one object from a spawn record (also sets +0x1394 = record + 0x24)
+00454d30	fn	placed_object_init	type 0x41: sub-object with task PTR_FUN_005b52d4[kind]

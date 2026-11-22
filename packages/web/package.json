@@ -8,6 +8,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "@ttotd/formats": "*"
+    "@ttotd/formats": "*",
+    "@ttotd/engine": "*"
   }
 }

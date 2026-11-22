@@ -342,6 +342,37 @@ Port: `packages/formats/src/events.ts`; viewer: Events tab.
     44 → 0x10a1 (komono_7 #0) + shadow, 45 → 0x17e9 (komono_st1b #11), 57 → 0xd7f/0xd80 (komono_st1b
     #3/#4). Kind 4 (21 placements, `FUN_004590c0`): breakable — intact draws model +0x294 (unless −1),
     broken plays the prop skeleton (+0x32c type, +0x330 motion); where kind 4 gets those fields is open.
+  - **Op 0x0B** (`FUN_00420120`, also entry 3 of @0059901c) spawns every record of its list through
+    `spawn_record` @00420050 — same 10-word positioned records; not decoded by the player yet. Stage 1 block 0
+    uses it for types 0x26, 0x22, 0x44 ×2, 0x20 ×4; block 1 for 0x33 ×2, 0x24 and some 0x30 zombies.
+  - **The opening car** (players driving) = type 0x26 (`FUN_00485140`): record +0x22 (obj +0x11c) picks the
+    scene variant 0–7; Stage 1 uses 1 (`FUN_004854b0`). Each frame it places itself on an **object path**
+    chosen by the current camera path DAT_00a11a18: 0x30 (48) → path 0x11f, 0x31 → 0x120 (until camera time
+    0x15d), 0x32 → 0x121 (+ door angle from it); time = camera time clamped to the path length
+    (@00598508[path]). `FUN_0040e9a0(path, t, out[6])` samples 6 channels (x, y, z, rx, ry, rz) via
+    `FUN_0040e7c0` from @005f1cd8[path] (channel indices) into the data @005f2afc[@004ddcd4[path]] —
+    not the cam/ slot ids, format not decoded yet. Draw (matrix: translate, rotZ, rotY, rotX): body
+    0x1603 + 0x1608, figures 0x8c9 and 0x8fd (head bobbing with sin(frame·0x200)), doors 0x1606/0x1607 and
+    0x1604/0x1605 (rotY by obj +0x1338), wheels 0x1609 spinning +0x2000 per frame — `char_adv00.bin`
+    #49–55 and #0, car_pl #8 (0x8fd = steering wheel: rotX(−0x1c00), rotZ(trunc(sin(frame·0x200)·10240)),
+    rotX(0x1c00); 0x8c9 = soft top; dust 0x8ff + frame % 12 at the four wheels, right side mirrored by scale
+    (−1, 1, 1)). Object paths are in **cam/op_stN.bin** (cam slots 15–23, same format as the camera files,
+    6 channels); Stage 1 paths 0x11f–0x121 = op_st1 local 0–2, lengths @00598508 = 280 / 350 / 150.
+    Ported: `packages/engine/src/opencar.ts`. Type 0x33 (`FUN_004216f0` → `FUN_004218f0`) is another car type.
+  - **The daemon in the opening** (corrected 2026-11-23 — first noted as "the players") = type 0x22
+    (`FUN_004b4330`, op 0x0B): body = skeleton 0x45 (69, char_adv04: the red winged demon, boss1 motions)
+    with motion = record +0x26, wings = a sub-object (obj +0x13b4) with skeleton 0x46 (70, 7 joints, bat
+    motions), motion 0x10. It speaks the fly-over lines ("I've already taken care of G."). Kind
+    (record +0x25) 0 → behaviours @005eb3b4[obj +0x1314]: **0** (`FUN_004b4510`, fly-over): placed at
+    (−406, 152.5, 142.4) yaw 0x717f (on a rooftop); camera time 70 → motion 0x448 (+voice 0x4317a9); motion end → 0x44a;
+    time 170 → voice 0x4517a9; then follows object path 0x122 at camera time until the title card ends
+    (DAT_00a397b8) → behaviour **1** (`FUN_004b4680`): camera path 0x31 → path 0x123 (t 250 → motion 1098
+    blend 8; t 280 → motion 1103 blend 3, then 1098 when it ends), 0x32 → path 0x124 (t 180 voice, t 240 →
+    motion 1099, then 1098); ends when the camera reaches record+0x24 +6 (path) / +8 (time). Drawn by
+    `FUN_004b6d70`: the body's skeleton, then the wings placed by the body's stored node matrix (+0x2c8)
+    with angles from it (`FUN_0040c040`), the wings' motion from @0058f970[state +0x1354]. Motion change with blending:
+    `FUN_00475900(motion state, id, start, blend)`; hard switch `FUN_00475890`. Not ported yet; not drawn
+    while the title card is up.
   - 0x0E set slot xyz (a11880).
   - 0x20–0x27: two families of view/parameter commands with subcommands (camera/light? → 9b).
 - **What the script controls (decoded while building the player, `evtplayer.ts`):**
@@ -442,9 +473,20 @@ Port: `packages/formats/src/prop.ts`; viewer: Props tab.
   u32 argument; script pointer DAT_00a39668). Opcode table `g_evt_ops` @005a2a4c (117 entries).
   On: DAT_00a11a38 = 1. Enter (input bit 8 for P1, 0x80000 for P2, FUN_004840a0) sets DAT_00a10c18; the
   task then sets the skip flags DAT_00a11a14 / DAT_00a1112c (subtitles stop) and calls FUN_00496670.
+- **What a skip does** (ported in `evtplayer.ts` `skip()`): `skip_task` sets DAT_00a14a68 (shot end) =
+  DAT_00a14a64 (shot time), so the running path shot ends this frame (`FUN_0040dcd0`: done when end ≤ time).
+  While DAT_00a11a14 is set: 0x30 camera commands are not queued (`FUN_0044f310`), the waits 0x40
+  (`FUN_0044f5a0`), 0x41 (`FUN_0044f5e0`), 0x42 (`FUN_0044f650`) and 0x74 (`FUN_0044fdc0`) pass at once,
+  sounds 0x3A/0x3B are not played and 0x2E stops the voice (`FUN_00495660(0x80000002)`), subtitles end
+  (`FUN_004238c0`). The script therefore runs to the scene's 0x2C 0, which clears the flag. DAT_00a1112c
+  lasts one frame (cleared by `FUN_00423e40`) and tells scene objects to finish (e.g. `FUN_00440990`).
 - Cut-scene objects spawned from `comevtbl` records (event op 0x0A): type 0x63 = `skip_task_start` (every
-  skippable scene starts with it), type 0x60 = FUN_00422c00 at the scene's end (gameplay HUD on: sets
-  DAT_00a14048 |= 0x20, loads the stage's HUD sprites). Object task table @00a11180 is filled from
+  skippable scene starts with it), type 0x60 = FUN_00422c00 at the scene's end = the **chapter title card** (corrected
+  2026-11-23; not "HUD on"): sets DAT_00a14048 |= 0x20 (the opening car and a few other objects hide), shows the
+  stage's title sprites (Stage 1: 0x210–0x217, layout FUN_004241b0) for 0xB4 frames — Enter ends it once fewer
+  than 0xA0 are left — then clears the bit, sets DAT_00a397b8 = 1 and ends. The script waits for that with
+  **op 0x45 248** (`FUN_0044f7f0`: wait until flag byte DAT_00a396c0[N] != 0; 0xa396c0 + 248 = 0xa397b8), so camera
+  path 49 starts only after the card. Object task table @00a11180 is filled from
   {type, fn} pairs @005a741c (FUN_0044e730).
 - **Letterbox bars** in cut scenes (user): drawing code not found yet (not a sprite at x = 0, not an
   obvious viewport/black fill). The Stage tab shows 60 px bars (640×360 picture) while the scene is

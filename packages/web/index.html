@@ -14,6 +14,7 @@
         <button id="pick">Open game folder…</button>
         <button id="reopen" hidden></button>
         <input id="dirinput" type="file" webkitdirectory multiple hidden />
+        <button id="play-game" hidden title="Play the game from Stage 1">▶ PLAY</button>
         <span id="busy" class="muted"></span>
       </div>
     </header>
@@ -254,6 +255,17 @@
         </section>
       </div>
     </main>
+    <div id="game" hidden>
+      <canvas id="game-canvas"></canvas>
+      <div id="game-overlay">
+        <div id="game-bar-top" class="cine-bar"></div>
+        <div id="game-bar-bottom" class="cine-bar"></div>
+        <canvas id="game-skip"></canvas>
+        <div id="game-subtitle"></div>
+        <div id="game-status"></div>
+      </div>
+      <div id="game-help">Enter: skip scene · Esc: quit</div>
+    </div>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>

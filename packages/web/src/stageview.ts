@@ -23,6 +23,7 @@ import {
   type SpawnRecord,
   type Mat4,
 } from '@ttotd/formats';
+import { TITLE_CARD_FLAG, TitleCard } from '@ttotd/engine';
 import { Assets } from './assets';
 import type { GameFS } from './ingest/gamefs';
 import { FlyCamera } from './gl/fly';
@@ -54,7 +55,7 @@ interface Ctx {
   camNext: number[][];
   playing: boolean;
   /** Event script playback (camera mode "event script"). */
-  evt?: { player: EventPlayer; playing: boolean; acc: number; logShown: number };
+  evt?: { player: EventPlayer; playing: boolean; acc: number; logShown: number; spawned: number; title?: TitleCard };
   skipSign?: boolean;
   /** Skeleton names for spawn labels. */
   charNames: string[];
@@ -99,7 +100,7 @@ export async function initStage(fs: GameFS, params = new URLSearchParams()) {
     $<HTMLSelectElement>('stg-cammode').value = 'events';
     await startEvents(Number(params.get('evt')), params.get('play') !== '0');
     setCameraModeEventsUi();
-    if (params.has('frames') && ctx.evt) for (let i = 0; i < Number(params.get('frames')); i++) ctx.evt.player.step();
+    if (params.has('frames') && ctx.evt) for (let i = 0; i < Number(params.get('frames')); i++) stepEvents(ctx.evt);
     renderEventLog();
     redraw();
   }
@@ -227,7 +228,7 @@ async function startEvents(block: number, play = true) {
     holdFrames: Number($<HTMLSelectElement>('stg-evt-hold').value),
   });
   player.start(block);
-  ctx.evt = { player, playing: play, acc: 0, logShown: 0 };
+  ctx.evt = { player, playing: play, acc: 0, logShown: 0, spawned: 0 };
   $('stg-evt-log').replaceChildren();
   await loadSkipSign();
   updatePlayButton();
@@ -371,6 +372,15 @@ function updateInfo() {
   $('stg-info').textContent = `${on.length} files · ${meshes} meshes`;
 }
 
+/** One frame of the script, plus the chapter title card (it releases the script's op 0x45 248 wait). */
+function stepEvents(e: NonNullable<Ctx['evt']>) {
+  const p = e.player;
+  p.step();
+  for (; e.spawned < p.spawns.length; e.spawned++) if (p.spawns[e.spawned]!.type === 0x60) e.title = new TitleCard();
+  e.title?.update(false);
+  if (e.title?.done) p.flags[TITLE_CARD_FLAG] = 1;
+}
+
 function tick(now: number) {
   requestAnimationFrame(tick);
   if (!ctx) return;
@@ -384,7 +394,7 @@ function tick(now: number) {
       let n = 0;
       while (e.acc >= 1 && n++ < 16) {
         e.acc -= 1;
-        e.player.step();
+        stepEvents(e);
       }
       renderEventLog();
       redraw();

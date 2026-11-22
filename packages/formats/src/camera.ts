@@ -1,5 +1,6 @@
 /**
- * Camera paths (`cam/*.bin`) and the game camera, ported from Tod_e.exe.
+ * Camera paths (`cam/cp_*.bin`), object paths (`cam/op_*.bin`, same format) and the game camera, ported
+ * from Tod_e.exe.
  * See re/notes/overview.md "Camera paths".
  *
  * File: u32 offset per path (count from the exe), data area at 4 + count·4. Path = 7 i32 channel
@@ -25,6 +26,8 @@ import type { PeImage } from './pe.ts';
 const CAM_NAMES = 0x004f3abc;
 const CAM_ID_LISTS = 0x004ddc44;
 const CAM_ID_COUNTS = 0x004ddca4;
+/** Length of each path (global id), i32 (@00598508; e.g. the opening car clamps its time to it). */
+const PATH_LENGTHS = 0x00598508;
 const K = 10430.378350470453; // @004dd520, 65536 / 2π (double)
 const RAD = 9.587379924285257e-5; // @004dd510, 2π / 65536 (double)
 
@@ -43,11 +46,22 @@ export function readCameraSlots(pe: PeImage): CameraSlot[] {
     } catch {
       continue;
     }
-    if (!/^cp_\w+\.bin$/i.test(file)) continue;
+    if (!/^(cp|op)_\w+\.bin$/i.test(file)) continue;
     const count = pe.u16(CAM_ID_COUNTS + s * 2), list = pe.u32(CAM_ID_LISTS + s * 4);
     out.push({ index: s, file, ids: Array.from({ length: count }, (_, k) => pe.i16(list + k * 2)) });
   }
   return out;
+}
+
+/** Length of path `id` (global id) as the exe stores it. */
+export function pathLength(pe: PeImage, id: number): number {
+  return pe.i32(PATH_LENGTHS + id * 4);
+}
+
+/** An object placed on a path: position and Sega angles (FUN_0040e9a0). */
+export interface ObjectPathSample {
+  pos: [number, number, number];
+  angles: [number, number, number];
 }
 
 export interface CameraSample {
@@ -99,6 +113,12 @@ export class CameraFile {
   sample(path: number, t: number): CameraSample {
     const e = (c: number) => this.evalCurve(this.channel(path, c), t);
     return { eye: [e(0), e(1), e(2)], target: [e(3), e(4), e(5)], roll: Math.trunc(e(6)) };
+  }
+
+  /** Object path sample (FUN_0040e9a0): channels 0–2 position, 3–5 angles truncated to integers. */
+  objectSample(path: number, t: number): ObjectPathSample {
+    const e = (c: number) => this.evalCurve(this.channel(path, c), t);
+    return { pos: [e(0), e(1), e(2)], angles: [Math.trunc(e(3)), Math.trunc(e(4)), Math.trunc(e(5))] };
   }
 
   /** Last key time over the path's position/target channels (its length in time units). */

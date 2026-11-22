@@ -31,7 +31,8 @@ describe.skipIf(!dir)('camera paths (real data)', () => {
       const data = 4 + slot.ids.length * 4;
       for (let path = 0; path < slot.ids.length; path++) {
         const ph = v.getUint32(path * 4, true);
-        for (let c = 0; c < 7; c++) {
+        // camera paths: eye, target, roll (7 channels); object paths (op_*): position, angles (6)
+        for (let c = 0; c < (slot.file.startsWith('op_') ? 6 : 7); c++) {
           const cv = data + v.getInt32(ph + c * 4, true) * 4;
           const cap = v.getUint16(cv, true);
           curves++;
