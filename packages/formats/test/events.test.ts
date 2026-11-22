@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { EVT_TERMINATORS, EventFile, readBlockRules, STAGE_EVENT_FILES } from '../src/events.ts';
+import { EVT_TERMINATORS, EventFile, readBlockRules, readSpawnRecords, STAGE_EVENT_FILES } from '../src/events.ts';
 import { PeImage } from '../src/pe.ts';
 
 const dir = process.env.TTOTD_DIR;
@@ -27,6 +27,37 @@ describe.skipIf(!dir)('event scripts (real evt/ + exe)', () => {
   it('stage n uses block-rule table n − 1 (one rule per block)', () => {
     STAGE_EVENT_FILES.forEach((f, i) => expect(readBlockRules(pe, i).length, f).toBe(load(f).blocks().length));
     expect(readBlockRules(pe, 0)[1]).toEqual({ kind: 1, targets: [10, 9, -1] }); // Stage 1 block 1 branches
+  });
+
+  it('spawn records decode from Stage 1 (op 0x09 and 0x0A)', () => {
+    const ef = load('st1evtbl.bin');
+    const common = new EventFile(new Uint8Array(readFileSync(join(dir!, 'evt', 'comevtbl.bin'))), 0x0ceb5800);
+    const cmds = ef.blocks().flatMap((b) => b.scripts.flatMap((s) => ef.script(s)));
+    const spawns09 = cmds.filter((c) => c.op === 0x09);
+    const spawns0a = cmds.filter((c) => c.op === 0x0a);
+    expect(spawns09.length).toBeGreaterThan(10);
+    expect(spawns0a.length).toBeGreaterThan(2);
+    for (const c of spawns09) {
+      const recs = readSpawnRecords(ef, common, c.offset);
+      expect(recs.length).toBeGreaterThan(0);
+      for (const r of recs) {
+        expect(r.pos).toBeDefined();
+        expect(r.type).toBeGreaterThanOrEqual(0);
+      }
+    }
+    // 0x0A records (simple, no position)
+    for (const c of spawns0a) {
+      const recs = readSpawnRecords(ef, common, c.offset);
+      expect(recs.length).toBeGreaterThan(0);
+      for (const r of recs) expect(r.pos).toBeUndefined();
+    }
+    // Block 0's first 0x09 is a placed object with type 0x41
+    const first09 = spawns09[0]!;
+    const firstRecs = readSpawnRecords(ef, common, first09.offset);
+    expect(firstRecs[0]!.type).toBe(0x41);
+    // The opening's first wave (op 0x07, two-player): type 0x30, skeleton 7 (znsam2), 100 HP
+    const wave = readSpawnRecords(ef, common, cmds.find((c) => c.op === 0x07)!.offset);
+    expect(wave.map((r) => [r.type, r.skeleton, r.hp])).toEqual([[0x30, 7, 100], [0x30, 7, 100], [0x30, 7, 100]]);
   });
 
   it('Stage 1 has five skippable scenes and opens with dialogue 1 after the first one', () => {
@@ -55,9 +86,15 @@ describe.skipIf(!dir)('event player (Stage 1 block 0)', async () => {
     expect(p.done).toBe(true);
     const order = p.log.filter((e) => e.kind === 'say' || /^camera path|^fight \d/.test(e.text)).map((e) => (e.kind === 'say' ? e.text.split(':')[0] : e.text.split(',')[0]));
     expect(order).toEqual(['camera path 48', 'camera path 49', 'say 1', 'say 2', 'say 3', 'camera path 50', 'say 4', 'camera path 50', 'say 5', 'camera path 50', 'say 6', expect.stringMatching(/^fight 4/)]);
-    // line 1 comes a few frames into path 1 (camera time 6), after the 230-frame fly-over
     const say1 = p.log.find((e) => e.text.startsWith('say 1'))!;
     expect(say1.timer).toBe(6);
     expect(say1.frame).toBeGreaterThan(230);
+    // spawns should include both positioned (0x09) and system (0x0A) records
+    expect(p.spawns.length).toBeGreaterThan(2);
+    const positioned = p.spawns.filter((s) => s.pos !== undefined);
+    const system = p.spawns.filter((s) => s.pos === undefined);
+    expect(positioned.length).toBeGreaterThan(0);
+    expect(system.length).toBeGreaterThan(0);
+    expect(positioned[0]!.type).toBe(0x41); // first placed object
   });
 });

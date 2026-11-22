@@ -97,12 +97,14 @@ Each milestone: **deliverable → how you verify**.
   animated prop types (boxes/`komono`, doors, glass, bridges, water…) decoded with their animations and
   a Props tab to watch each one; cars (`car_*`, plain models moved by code) traced.
   → Camera path matches the Stage 1 route; each prop animates like the original.
-- [ ] **M8 — Typing core.** Typing range: words appear, input matching, mistakes, scoring —
-  ported from the exe.
-  → Typing feel and score values match the original.
-- [ ] **M9 — Event tables.** Decode `evt/` (pointer rebasing) + Stage 1 event timeline viewer.
-  Includes placing props and cars in the stage and triggering their movement at the scripted moment.
+- [ ] **M9 — Event tables** (done before M8, agreed 2026-11-23: fights and the enemies that carry the words
+  are started by the event script). Decode `evt/` (pointer rebasing) + Stage 1 event timeline viewer.
+  9a ✅ decoder, Events tab, script player (camera, subtitles, skip sign, letterbox, light & fog).
+  9b: title card, spawn records (type, position, word box), props and cars placed and triggered.
   → Spawns/events line up with Stage 1; props and cars appear and move in the Stage view during playback.
+- [ ] **M8 — Typing core.** Typing range: words appear, input matching, mistakes, scoring —
+  ported from the exe, on top of the real spawns from M9 (enemies with their word boxes in the fights).
+  → Typing feel and score values match the original.
 - [ ] **M9b — Stage 1 story scenes.** Play Stage 1's scripted scenes as the game does: characters with
   their motions, camera cuts (standalone camera paths), voices and subtitles in sync, driven by the event
   tables. (No video files exist — all scenes are real-time.)

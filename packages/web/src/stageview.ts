@@ -18,12 +18,15 @@ import {
   readBlockRules,
   readDialogue,
   STAGE_EVENT_FILES,
+  readCharacterTypes,
   type PolModel,
+  type SpawnRecord,
+  type Mat4,
 } from '@ttotd/formats';
 import { Assets } from './assets';
 import type { GameFS } from './ingest/gamefs';
 import { FlyCamera } from './gl/fly';
-import { Renderer, type GpuModel, type TextureSource } from './gl/renderer';
+import { Renderer, type GpuModel, type Marker3D, type TextureSource } from './gl/renderer';
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 
@@ -53,6 +56,8 @@ interface Ctx {
   /** Event script playback (camera mode "event script"). */
   evt?: { player: EventPlayer; playing: boolean; acc: number; logShown: number };
   skipSign?: boolean;
+  /** Skeleton names for spawn labels. */
+  charNames: string[];
 }
 let ctx: Ctx | undefined;
 
@@ -73,7 +78,7 @@ function stageGroups(fs: GameFS): Map<string, string[]> {
 export async function initStage(fs: GameFS, params = new URLSearchParams()) {
   const assets = await Assets.open(fs);
   const cam = new FlyCamera();
-  ctx = { assets, renderer: new Renderer($<HTMLCanvasElement>('stg-canvas')), cam, files: [], stage: '', last: performance.now(), token: 0, camIds: [], camNext: [], playing: false };
+  ctx = { assets, renderer: new Renderer($<HTMLCanvasElement>('stg-canvas')), cam, files: [], stage: '', last: performance.now(), token: 0, camIds: [], camNext: [], playing: false, charNames: readCharacterTypes(assets.pe).map((t) => t.name) };
   cam.attach($<HTMLCanvasElement>('stg-canvas'), () => !$('tab-stage').hidden);
   cam.onChange = () => redraw();
   const groups = stageGroups(fs);
@@ -449,7 +454,13 @@ export function redraw() {
     const fog = sl.fog ? { color: sl.fogColor } : (false as const);
     if (sl.fog) r.clear(...sl.fogColor);
     for (const f of ctx.files) if (f.on && f.gpu) r.draw(f.gpu, f.tex, { world: identity(), view, proj, lit, culling, lighting, eye, fog });
-    if (ctx.evt) placeOverlay();
+    if (ctx.evt) {
+      const spawns = ctx.evt.player.spawns;
+      const markers = spawnMarkers(spawns);
+      r.drawMarkers(markers, view, proj);
+      placeOverlay();
+      placeSpawnLabels(markers, view, proj);
+    }
     if (ctx.path) {
       const s = ctx.path.file.sample(ctx.path.index, ctx.path.t);
       const c = cameraFromSample(s);
@@ -520,3 +531,69 @@ $<HTMLSelectElement>('stg-evt-block').addEventListener('change', (e) => void sta
 $<HTMLSelectElement>('stg-evt-hold').addEventListener('change', () => {
   if (ctx?.evt) ctx.evt.player.opts.holdFrames = Number($<HTMLSelectElement>('stg-evt-hold').value);
 });
+
+// --- spawn markers (M9b) -----------------------------------------------------------------------
+
+function spawnColor(r: SpawnRecord): [number, number, number] {
+  if (r.type === 0x63) return [0.5, 0.5, 0.5]; // skip_task
+  if (r.type === 0x60) return [0.4, 0.4, 0.6]; // hud_on
+  if (r.type === 0x41) {
+    // placed objects: colour by kind range
+    if (r.kind >= 0x04 && r.kind <= 0x0b) return [1, 0.3, 0.2]; // enemies
+    if (r.kind >= 0x12 && r.kind <= 0x14) return [1, 0.2, 0.4]; // bosses
+    if (r.kind >= 0x19 && r.kind <= 0x1c) return [0.8, 0.1, 0.5]; // bosses b
+    if (r.kind === 0x22) return [0.2, 0.7, 1]; // player characters
+    if (r.kind >= 0x26 && r.kind <= 0x2c) return [1, 0.5, 0.1]; // scene objects
+    if (r.kind >= 0x38) return [1, 0.6, 0.6]; // late enemies
+    return [1, 1, 0.3]; // other placed
+  }
+  if (r.type >= 0x10 && r.type <= 0x17) return [1, 0.2, 0.2]; // zombies
+  if (r.type >= 0x20 && r.type <= 0x23) return [0.8, 0.1, 0.5]; // bosses
+  if (r.type >= 0x27 && r.type <= 0x2a) return [0.3, 0.6, 1]; // cars
+  if (r.type === 0x30 || r.type === 0x31) return [0.2, 0.9, 0.5]; // first-wave enemies
+  return [0.9, 0.9, 0.3]; // other
+}
+
+function spawnLabel(r: SpawnRecord): string {
+  if (r.type === 0x63) return 'skip';
+  if (r.type === 0x60) return 'HUD';
+  if (r.type === 0x41) {
+    if (r.kind >= 0x27 && r.kind <= 0x2a) return `car[${r.kind - 0x27}]`;
+    return `obj[${r.kind}]`;
+  }
+  const name = ctx?.charNames[r.skeleton] ?? `skel${r.skeleton}`;
+  return `t${r.type.toString(16)} ${name} hp${r.hp}`;
+}
+
+function spawnMarkers(spawns: SpawnRecord[]): Marker3D[] {
+  const out: Marker3D[] = [];
+  for (const s of spawns) {
+    if (!s.pos) continue;
+    // Skip zero-position records for placed objects that inherit their parent's position
+    const [x, y, z] = s.pos;
+    out.push({ pos: [x, y, z], color: spawnColor(s), size: 4, label: spawnLabel(s) });
+  }
+  return out;
+}
+
+function placeSpawnLabels(markers: Marker3D[], view: Mat4, proj: Mat4) {
+  if (!ctx) return;
+  const container = $('stg-spawn-labels');
+  while (container.children.length > markers.length) container.lastElementChild!.remove();
+  while (container.children.length < markers.length) {
+    const el = document.createElement('div');
+    el.className = 'spawn-label';
+    container.append(el);
+  }
+  for (let i = 0; i < markers.length; i++) {
+    const m = markers[i]!;
+    const el = container.children[i] as HTMLElement;
+    const p = ctx.renderer.project(m.pos, view, proj);
+    if (!p) { el.style.display = 'none'; continue; }
+    el.style.display = '';
+    el.style.left = `${p[0]}px`;
+    el.style.top = `${p[1] - 16}px`;
+    el.style.color = `rgb(${m.color.map((c) => Math.round(c * 255)).join(',')})`;
+    el.textContent = m.label ?? '';
+  }
+}

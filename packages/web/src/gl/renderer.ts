@@ -140,6 +140,10 @@ export class Renderer {
   private textures = new Map<string, WebGLTexture | null>();
   private samplers = new Map<string, WebGLSampler>();
   readonly canvas: HTMLCanvasElement;
+  private markerProg?: WebGLProgram;
+  private markerVao?: WebGLVertexArrayObject;
+  private markerU: Record<string, WebGLUniformLocation | null> = {};
+  private markerCount = 0;
 
   constructor(canvas: HTMLCanvasElement) {
     this.canvas = canvas;
@@ -344,7 +348,112 @@ export class Renderer {
     gl.bindVertexArray(null);
     gl.depthMask(true);
   }
+
+  private initMarkers() {
+    if (this.markerProg) return;
+    const gl = this.gl;
+    this.markerProg = this.link(MARKER_VS, MARKER_FS);
+    for (const n of ['uVP', 'uCenter', 'uSize', 'uColor'])
+      this.markerU[n] = gl.getUniformLocation(this.markerProg, n);
+    // Diamond shape: 8 triangles (top pyramid + bottom pyramid)
+    const S = 1;
+    const verts = new Float32Array([
+      // top pyramid (4 faces)
+      0, S, 0, S, 0, 0, 0, 0, S,
+      0, S, 0, 0, 0, S, -S, 0, 0,
+      0, S, 0, -S, 0, 0, 0, 0, -S,
+      0, S, 0, 0, 0, -S, S, 0, 0,
+      // bottom pyramid (4 faces)
+      0, -S, 0, 0, 0, S, S, 0, 0,
+      0, -S, 0, -S, 0, 0, 0, 0, S,
+      0, -S, 0, 0, 0, -S, -S, 0, 0,
+      0, -S, 0, S, 0, 0, 0, 0, -S,
+    ]);
+    this.markerCount = verts.length / 3;
+    this.markerVao = gl.createVertexArray()!;
+    gl.bindVertexArray(this.markerVao);
+    const buf = gl.createBuffer()!;
+    gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+    gl.bufferData(gl.ARRAY_BUFFER, verts, gl.STATIC_DRAW);
+    gl.enableVertexAttribArray(0);
+    gl.vertexAttribPointer(0, 3, gl.FLOAT, false, 12, 0);
+    gl.bindVertexArray(null);
+  }
+
+  drawMarkers(markers: Marker3D[], view: Mat4, proj: Mat4) {
+    if (!markers.length) return;
+    this.initMarkers();
+    const gl = this.gl;
+    gl.useProgram(this.markerProg!);
+    // VP = proj * view
+    const vp = new Float32Array(16);
+    for (let r = 0; r < 4; r++) for (let c = 0; c < 4; c++) {
+      let s = 0;
+      for (let k = 0; k < 4; k++) s += proj[r + k * 4]! * view[k + c * 4]!;
+      vp[r + c * 4] = s;
+    }
+    gl.uniformMatrix4fv(this.markerU.uVP!, false, vp);
+    gl.enable(gl.DEPTH_TEST);
+    gl.depthFunc(gl.LEQUAL);
+    gl.depthMask(true);
+    gl.disable(gl.BLEND);
+    gl.disable(gl.CULL_FACE);
+    gl.bindVertexArray(this.markerVao!);
+    for (const m of markers) {
+      gl.uniform3fv(this.markerU.uCenter!, m.pos);
+      gl.uniform1f(this.markerU.uSize!, m.size ?? 3);
+      gl.uniform3fv(this.markerU.uColor!, m.color);
+      gl.drawArrays(gl.TRIANGLES, 0, this.markerCount);
+    }
+    gl.bindVertexArray(null);
+  }
+
+  /** Project a 3D world point to canvas pixel coordinates (or undefined if behind the camera). */
+  project(pos: [number, number, number], view: Mat4, proj: Mat4): [number, number] | undefined {
+    // clip = proj * view * [x,y,z,1]
+    const v = [0, 0, 0, 0];
+    for (let r = 0; r < 4; r++) {
+      let s = 0;
+      for (let k = 0; k < 4; k++) s += view[r + k * 4]! * (k < 3 ? pos[k]! : 1);
+      v[r] = s;
+    }
+    const c = [0, 0, 0, 0];
+    for (let r = 0; r < 4; r++) {
+      let s = 0;
+      for (let k = 0; k < 4; k++) s += proj[r + k * 4]! * v[k]!;
+      c[r] = s;
+    }
+    if (c[3]! <= 0) return undefined;
+    const ndc = [c[0]! / c[3]!, c[1]! / c[3]!];
+    return [(ndc[0]! * 0.5 + 0.5) * this.canvas.clientWidth, (1 - (ndc[1]! * 0.5 + 0.5)) * this.canvas.clientHeight];
+  }
 }
+
+export interface Marker3D {
+  pos: [number, number, number];
+  color: [number, number, number];
+  size?: number;
+  label?: string;
+}
+
+const MARKER_VS = `#version 300 es
+layout(location=0) in vec3 aPos;
+uniform mat4 uVP;
+uniform vec3 uCenter;
+uniform float uSize;
+uniform vec3 uColor;
+out vec3 vColor;
+void main() {
+  vec3 wp = aPos * uSize + uCenter;
+  gl_Position = uVP * vec4(wp, 1.0);
+  gl_Position.z = gl_Position.z * 2.0 - gl_Position.w;
+  vColor = uColor * (0.6 + 0.4 * aPos.y);
+}`;
+const MARKER_FS = `#version 300 es
+precision highp float;
+in vec3 vColor;
+out vec4 outColor;
+void main() { outColor = vec4(vColor, 1.0); }`;
 
 function glBlend(gl: WebGL2RenderingContext, d3d: number): number {
   switch (d3d) {

@@ -309,6 +309,39 @@ Port: `packages/formats/src/events.ts`; viewer: Events tab.
     wait for the timer), 0x4D segment start (resets the timer and RNG), 0x4E halt, 0x4F next script,
     0x71 return, 0x73 branch on game mode (≥ 100 = not equal).
   - 0x09/0x0A/0x72 spawn lists (pointers to records: type, …, position, angles).
+  - Positioned spawn record (ops 0x09, 0x03 one-player, 0x07 two-player; handler @0041fe50): +0x00 object
+    type (task table @005a741c), +0x04 param → obj +0x34 (| 1), +0x08 f32 xyz → obj +0x40, +0x14 i32 angles
+    → obj +0x64, **+0x22 i16 hit points** → obj +0x11c/+0x11e (current/max; health bar = cur/max, dead
+    below 1), **+0x24 signed byte skeleton** → obj +0x1f8 (index into `g_chr_skeletons`), +0x25 byte kind
+    → obj +0x1310. Stage 1's opening wave: type 0x30 (`FUN_00441d80`), skeleton 7 `znsam2`, 100 HP.
+    Type 0x30 replaces +0x1f8 with byte 0 of the data at obj +0x1394 unless it is 9; who sets +0x1394 for
+    these objects is still open. Type 0x30's draw (`FUN_00442bc0`) scales ×2 (×1.8 for skeleton 14) only
+    when DAT_00a3bac0 & 2.
+    Type 0x30 starts motion obj +0x1b8 = 0x3f5 (`zom.bin#13`; 0x457 `hzom.bin#9` when kind = 4): frame 0
+    puts the feet at y ≈ 0. Model front is local −Z (the unanimated pose has the feet turned to +Z). The
+    body keeps the record's yaw; only node 2 (head, `FUN_00442c60`) turns toward the camera eye
+    (DAT_00a396a0 ← DAT_00a149e0, +15 y), within ±0x4000 of body yaw − 0x8000, when obj +0x34 & 0x40000
+    is clear. Object matrix (`FUN_0044c630`): translate, rotX(+0x64), rotZ(+0x6c), rotY(+0x68).
+  - Ops 0x03/0x07 re-dispatch through @0059901c[DAT_00a10c04]; entry 3 = `FUN_00420120` → `FUN_00420050`
+    per record, which also sets obj +0x1394 = record + 0x24 and +0x131a = record word 8. Type 0x30 reads
+    from it: [0] skeleton (kept if 9), [1] kind → +0x1310, [2] behaviour → +0x1314 (`PTR_FUN_005a215c`).
+    Stage 1: behaviour 18 (`FUN_00446700`) for the opening wave; **behaviour 26** (`FUN_00447380`) waits
+    record +0x28 frames, then moves along an arc (`FUN_00437460`) to the target at record +0x2c..+0x34
+    over +0x38 frames, playing motion 999 (0x3c4 if obj +0x34 & 0x1000000) — the blk4 zombie spawned at
+    y 61 over a floor at 35. The blk1 kind-2 zombies (y 11, floor 1.86) also start in the air; kind 2's
+    movement is not decoded yet.
+  - Placed objects (type 0x41, `FUN_00454d30`): a 0x380-byte sub-object with task `PTR_FUN_005b52d4`
+    [kind], placed at the record's pos/angles. Record +0x22 → sub-object +0x11c (the object is removed
+    once the scene counter DAT_00a11850 has changed more than that many times, `FUN_00454a20`) and +0x294
+    (model id for some kinds). Per-kind setup switch covers kinds 6–0x4d only (byte table @00455b8c,
+    jump table @00455ae8, index kind − 6). The allocator `FUN_004beb60` zeroes only the first 0x34 bytes.
+    Breakable sub-types @005b5b10 (12 bytes: prop type, prop motion, ?, ?, radius, height; 12 entries)
+    feed obj +0x32c/+0x330/+0x124 (set for kind 0x2b from angle z).
+    Stage 1 kinds → fixed model ids found in their code: 0 → 0x110d (common #200, round shadow),
+    7 → 0x17ea (komono_st1 #8), 9 → 0x1284/0x1285 (kyoukai_garasu #0/#1), 41 → 0x961 (komono_st1 #0),
+    44 → 0x10a1 (komono_7 #0) + shadow, 45 → 0x17e9 (komono_st1b #11), 57 → 0xd7f/0xd80 (komono_st1b
+    #3/#4). Kind 4 (21 placements, `FUN_004590c0`): breakable — intact draws model +0x294 (unless −1),
+    broken plays the prop skeleton (+0x32c type, +0x330 motion); where kind 4 gets those fields is open.
   - 0x0E set slot xyz (a11880).
   - 0x20–0x27: two families of view/parameter commands with subcommands (camera/light? → 9b).
 - **What the script controls (decoded while building the player, `evtplayer.ts`):**

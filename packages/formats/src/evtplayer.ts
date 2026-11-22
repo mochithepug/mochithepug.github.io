@@ -14,8 +14,8 @@
  * resumes; other camera modes (0x11/0x12/0x14/0x60: screen, player state, view, look-at) finish at once and
  * keep the view; game mode 0 and one player are assumed.
  */
-import type { BlockRule, EventFile } from './events.ts';
-import { evtOpName } from './events.ts';
+import type { BlockRule, EventFile, SpawnRecord } from './events.ts';
+import { evtOpName, readSpawnRecords } from './events.ts';
 import type { Speech } from './dialogue.ts';
 import { DEFAULT_SCENE_LIGHT, type SceneLight } from './scenelight.ts';
 
@@ -83,6 +83,8 @@ export class EventPlayer {
   subtitle?: { speech: Speech; remaining: number; line: number };
   skippable = false;
   light: SceneLight = { ...DEFAULT_SCENE_LIGHT, color: [...DEFAULT_SCENE_LIGHT.color], fogColor: [...DEFAULT_SCENE_LIGHT.fogColor] };
+  /** Spawned objects accumulated during playback. */
+  spawns: SpawnRecord[] = [];
   log: EvtLogEntry[] = [];
 
   constructor(ef: EventFile, opts: EvtPlayerOptions) {
@@ -273,9 +275,24 @@ export class EventPlayer {
           this.yieldFlag = true;
           this.add('flow', 'halt');
           return;
+        case 0x03:
+        case 0x07:
+        case 0x09:
+        case 0x0a: {
+          const records = readSpawnRecords(this.ef, this.opts.common, o);
+          for (const r of records) {
+            this.spawns.push(r);
+            const typeName = r.type === 0x41 ? `placed[${r.kind}]` : r.type === 0x63 ? 'skip_task' : r.type === 0x60 ? 'hud_on' : `type_0x${r.type.toString(16)}`;
+            const posStr = r.pos ? ` (${r.pos.map((v) => v.toFixed(0)).join(', ')})` : '';
+            const chrStr = r.pos ? ` skel=${r.skeleton} hp=${r.hp}` : '';
+            this.add('spawn', `${evtOpName(op)} ${typeName}${chrStr}${posStr}`);
+          }
+          advance();
+          break;
+        }
         default: {
           const kind: EvtLogEntry['kind'] =
-            op === 0x09 || op === 0x0a || op === 0x72 ? 'spawn' : op >= 0x50 && op <= 0x5a ? 'sound' : op === 0x19 || op === 0x24 ? 'light' : 'other';
+            op === 0x72 ? 'spawn' : op >= 0x50 && op <= 0x5a ? 'sound' : op === 0x19 || op === 0x24 ? 'light' : 'other';
           const args = Array.from({ length: Math.min(len / 4 - 1, 6) }, (_, k) => w(1 + k));
           this.add(kind, `${evtOpName(op)} ${args.map((a) => (Math.abs(a) < 0x10000 ? a : '0x' + (a >>> 0).toString(16))).join(' ')}${len / 4 - 1 > 6 ? ' …' : ''}`);
           advance();

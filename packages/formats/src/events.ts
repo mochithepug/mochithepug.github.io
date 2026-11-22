@@ -41,7 +41,7 @@ export const EVT_TERMINATORS = new Set([0x4f, 0x4e, 0x71]);
 
 /** Names for the commands identified so far (others print as op_XX). */
 export const EVT_OP_NAMES: Record<number, string> = {
-  0x09: 'spawn', 0x0a: 'spawn_b', 0x0e: 'set_slot_xyz', 0x20: 'light_fog', 0x24: 'light_fog_b', 0x21: 'param_c',
+  0x03: 'spawn_1p', 0x07: 'spawn_2p', 0x09: 'spawn', 0x0a: 'spawn_b', 0x0e: 'set_slot_xyz', 0x20: 'light_fog', 0x24: 'light_fog_b', 0x21: 'param_c',
   0x25: 'param_d', 0x23: 'light_fog_fade', 0x27: 'param_f', 0x2c: 'skippable', 0x2d: 'say', 0x30: 'camera', 0x41: 'wait_frame',
   0x42: 'wait_frames', 0x40: 'wait_camera', 0x38: 'sound', 0x3a: 'sound_b', 0x39: 'sound_repeat', 0x3b: 'sound_repeat_b', 0x18: 'light_dir', 0x19: 'light_dir_b', 0x61: 'screen_mode', 0x49: 'by_players_a', 0x4a: 'by_players_b', 0x4b: 'by_players_c', 0x4d: 'segment_start',
   0x4e: 'halt', 0x4f: 'next_script', 0x6c: 'camera_1p', 0x6d: 'camera_2p', 0x71: 'return', 0x72: 'spawn_c',
@@ -49,6 +49,69 @@ export const EVT_OP_NAMES: Record<number, string> = {
 };
 
 export const evtOpName = (op: number) => EVT_OP_NAMES[op] ?? `op_${op.toString(16).padStart(2, '0')}`;
+
+/** A spawn record decoded from a 0x09 command's pointer list. */
+export interface SpawnRecord {
+  /** Object task type (indexes the task table; 0x41 = placed object dispatcher). */
+  type: number;
+  /** Setup parameter (record word 1). */
+  param: number;
+  /** World position (f32 xyz). Undefined for 0x0A records (no position). */
+  pos?: [number, number, number];
+  /** Sega angles (i32 xyz). */
+  angles?: [number, number, number];
+  /** i16 at record +0x22: hit points for characters (obj +0x11c/+0x11e); for placed objects (0x41), a lifetime in scene changes and, for some kinds, the model id. */
+  hp: number;
+  /** Sub-kind byte (record +0x25 → object +0x1310; selects the placed-object sub-type for type 0x41). */
+  kind: number;
+  /** Skeleton index into `g_chr_skeletons` (signed byte at record +0x24 → object +0x1f8). */
+  skeleton: number;
+  /** Source: which file the record came from. */
+  source: 'stage' | 'common';
+}
+
+/** Decode the spawn records in a positioned (0x09, 0x03, 0x07) or simple (0x0A) command's -1 terminated pointer list. */
+export function readSpawnRecords(ef: EventFile, common: EventFile | undefined, cmdOffset: number): SpawnRecord[] {
+  const op = ef.word(cmdOffset);
+  const positioned = op === 0x09 || op === 0x03 || op === 0x07;
+  const out: SpawnRecord[] = [];
+  let k = 1;
+  while (true) {
+    const ptr = ef.word(cmdOffset + k * 4);
+    if (ptr === -1) break;
+    const uptr = ptr >>> 0;
+    let off = ef.offsetOf(uptr);
+    let src: EventFile | undefined = ef;
+    let source: 'stage' | 'common' = 'stage';
+    if (off === undefined && common) {
+      off = common.offsetOf(uptr);
+      src = common;
+      source = 'common';
+    }
+    if (off === undefined || !src) { k++; continue; }
+    if (positioned) {
+      const w = (i: number) => src!.word(off! + i * 4);
+      const f = (i: number) => {
+        const v = new DataView(src!.data.buffer, src!.data.byteOffset, src!.data.byteLength);
+        return v.getFloat32(off! + i * 4, true);
+      };
+      const dv = new DataView(src.data.buffer, src.data.byteOffset, src.data.byteLength);
+      out.push({
+        type: w(0), param: w(1),
+        pos: [f(2), f(3), f(4)],
+        angles: [w(5), w(6), w(7)],
+        hp: dv.getInt16(off + 0x22, true), kind: src.data[off + 0x25]!, skeleton: dv.getInt8(off + 0x24), source,
+      });
+    } else {
+      out.push({
+        type: src.word(off), param: src.word(off + 4),
+        hp: 0, kind: 0, skeleton: 0, source,
+      });
+    }
+    k++;
+  }
+  return out;
+}
 
 export interface EvtCommand {
   /** Byte offset in the file. */
