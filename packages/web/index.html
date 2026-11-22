@@ -21,6 +21,7 @@
       <button data-tab="files" class="tab active">Files</button>
       <button data-tab="textures" class="tab">Textures</button>
       <button data-tab="models" class="tab">Models</button>
+      <button data-tab="chars" class="tab">Characters</button>
     </nav>
     <main id="tab-files">
       <section id="report" hidden></section>
@@ -73,6 +74,36 @@
           </div>
           <div id="mdl-canvas-wrap"><canvas id="mdl-canvas"></canvas>
             <div id="mdl-help" class="muted">drag: rotate · shift-drag / right-drag: pan · wheel: zoom</div>
+          </div>
+        </section>
+      </div>
+    </main>
+    <main id="tab-chars" class="wide" hidden>
+      <div id="chr-layout">
+        <aside id="chr-types">
+          <input id="chr-filter" type="search" placeholder="Filter characters… (e.g. player, zn, boss)" />
+          <div id="chr-type-list"></div>
+        </aside>
+        <aside id="chr-motions">
+          <div class="muted small" id="chr-motions-head">Motions</div>
+          <div id="chr-motion-list"></div>
+        </aside>
+        <section id="chr-view">
+          <div id="chr-toolbar">
+            <strong id="chr-title">Pick a character</strong>
+            <span id="chr-info" class="muted"></span>
+            <span class="spacer"></span>
+            <button id="chr-play" class="small">❚❚ pause</button>
+            <input id="chr-frame" type="range" min="0" max="0" value="0" />
+            <span id="chr-frame-label" class="muted mono">0 / 0</span>
+            <label>speed <select id="chr-speed"><option value="1" selected>1×</option><option value="0.5">½×</option><option value="0.25">¼×</option><option value="0.1">⅒×</option></select></label>
+            <label><input id="chr-lit" type="checkbox" checked /> lighting</label>
+            <label><input id="chr-cull" type="checkbox" checked /> culling</label>
+            <label title="Keep the character in place (ignore root movement)"><input id="chr-inplace" type="checkbox" /> in place</label>
+            <button id="chr-reset" class="small secondary">reset view</button>
+          </div>
+          <div class="canvas-wrap"><canvas id="chr-canvas"></canvas>
+            <div class="canvas-help muted">drag: rotate · shift-drag / right-drag: pan · wheel: zoom · space: play/pause · ←/→: step</div>
           </div>
         </section>
       </div>

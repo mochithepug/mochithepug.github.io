@@ -131,3 +131,27 @@ on-screen winding); a street seen from below disappears because only its top was
 
 **Known limits (by design, later milestones):** lighting is an approximation (exact lights/fog later);
 character parts are unassembled until the skeleton (M5); flat shading drawn smooth.
+
+## M5 — Skeletons & animation ✅ (2026-11-22)
+
+**Delivered:** `re/scripts/FindFunctions.java` + `DecompileAt.java`; `packages/formats/src/character.ts`
+(86 character skeletons from the exe, global model-id → file/model lookup, motion table, `Motion`
+sampling with the exe's half-frame rules, `poseCharacter`), `d3dmath.ts` (moved from web + the exe's
+matrix-stack ops); web: shared `assets.ts` cache, `gl/orbit.ts`, **Characters** tab (character list,
+motions that fit its joint count, play/pause, frame slider, speed, step with ←/→, in-place toggle).
+
+**Verified:** all 1 116 motion headers equal `floor((F−1)/2)+2` (test); every drawable node of all 86
+skeletons resolves to an existing model (test); every frame of James's 14 motions poses with finite
+matrices (test); rotation/translate ops checked line-by-line against the decompiled exe; screenshots:
+James (front/back, keyboard, backpack), zombie `zsass` with `assb.bin` (twin blades, seamless).
+User confirmed the characters look good.
+
+**Q&A worth keeping:** the box on James's back is identified as a Dreamcast from the game's own
+textures (player1 tex #33 round disc lid, #38 four controller ports); the yellow cylinder beside it
+(#28–30) looks like a battery. Lesson: keep "the data shows" separate from "I recognise".
+
+**Findings:** function coverage fix (56 % → 92 %); motion/skeleton formats; prop skeletons are separate
+(M7). See re/notes/overview.md "Characters & motions".
+
+**Known limits:** the viewer can't know which motions belong to which character (game logic decides);
+wrong pairings may show gaps. Head/face variants and motion cross-fades not applied yet.

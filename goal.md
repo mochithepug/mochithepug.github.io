@@ -86,7 +86,7 @@ Each milestone: **deliverable → how you verify**.
   → Textures look correct (zombies, stage walls, UI).
 - [x] **M4 — Static model viewer.** Decode `pol/` meshes, render textured in WebGL2 with orbit camera.
   → Recognisable characters and stage pieces.
-- [ ] **M5 — Hierarchy + animation.** Node hierarchy and `mot/` playback.
+- [x] **M5 — Hierarchy + animation.** Node hierarchy and `mot/` playback.
   → Zombies walk/attack in the viewer.
 - [ ] **M6 — Font + word lists.** Decode `font.bin` and `word/` lists; browsable word list viewer
   rendered with the original font.

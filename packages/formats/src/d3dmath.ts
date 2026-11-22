@@ -59,3 +59,46 @@ export function perspectiveFovLH(fovY: number, aspect: number, zn: number, zf: n
     0, 0, -zn * zf / (zf - zn), 0,
   ]);
 }
+
+// --- Tod_e.exe matrix-stack operations (FUN_004c2600 / 2450 / 2360 / 2270) -------------------
+// Each premultiplies the current matrix (a "local" transform): M' = R · M. Angles are Sega units
+// (65536 = 360°; the exe multiplies by 2π/65536 held as a double @004dd510).
+
+const ANGLE = (2 * Math.PI) / 65536;
+
+/** M' = T(x, y, z) · M */
+export function translateLocal(m: Mat4, x: number, y: number, z: number): Mat4 {
+  const o = new Float32Array(m);
+  for (let c = 0; c < 4; c++) o[12 + c] = x * m[c]! + y * m[4 + c]! + z * m[8 + c]! + m[12 + c]!;
+  return o;
+}
+
+/** M' = Rx(a) · M, Rx = [[1,0,0],[0,c,s],[0,-s,c]] (D3DXMatrixRotationX) */
+export function rotateXLocal(m: Mat4, a: number): Mat4 {
+  const c = Math.cos(a * ANGLE), s = Math.sin(a * ANGLE), o = new Float32Array(m);
+  for (let k = 0; k < 4; k++) {
+    o[4 + k] = m[4 + k]! * c + s * m[8 + k]!;
+    o[8 + k] = c * m[8 + k]! - m[4 + k]! * s;
+  }
+  return o;
+}
+
+/** M' = Ry(a) · M, Ry = [[c,0,-s],[0,1,0],[s,0,c]] (D3DXMatrixRotationY) */
+export function rotateYLocal(m: Mat4, a: number): Mat4 {
+  const c = Math.cos(a * ANGLE), s = Math.sin(a * ANGLE), o = new Float32Array(m);
+  for (let k = 0; k < 4; k++) {
+    o[k] = m[k]! * c - s * m[8 + k]!;
+    o[8 + k] = m[k]! * s + c * m[8 + k]!;
+  }
+  return o;
+}
+
+/** M' = Rz(a) · M, Rz = [[c,s,0],[-s,c,0],[0,0,1]] (D3DXMatrixRotationZ) */
+export function rotateZLocal(m: Mat4, a: number): Mat4 {
+  const c = Math.cos(a * ANGLE), s = Math.sin(a * ANGLE), o = new Float32Array(m);
+  for (let k = 0; k < 4; k++) {
+    o[k] = m[k]! * c + s * m[4 + k]!;
+    o[4 + k] = c * m[4 + k]! - m[k]! * s;
+  }
+  return o;
+}

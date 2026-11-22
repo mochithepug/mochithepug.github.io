@@ -142,6 +142,41 @@ Port: `packages/formats/src/pvr.ts`, `texsets.ts`; checks in `test/pvr.test.ts`,
 
 Port: `packages/formats/src/pol.ts`, `renderstate.ts`; WebGL2 renderer `packages/web/src/gl/`.
 
+## Function discovery (M5)
+
+Ghidra's auto-analysis covered only 56 % of `.text`: much of the game is reached only through
+function-pointer tables (task/state callbacks). `re/scripts/FindFunctions.java` creates functions at
+(1) data words pointing into uncovered code and (2) 16-byte-aligned starts after NOP/INT3/RET padding,
+then re-analysis: **920 functions recovered, coverage 92 %** (3 261 functions decompiled).
+
+## Characters & motions (M5)
+
+- Global model ids: `g_model_file[id]` → pol file index → `g_pol_names[file]`; the model's index in
+  the file is the position of `id` in `g_pol_id_lists[file]`. The texture set has the same index (hence
+  "same name"). In the pol table, entry `(start|noTexFlag, modelOffset)`; a model's block runs to the next
+  entry's start (the `(fileSize, 0)` terminator closes the last one).
+- **86 character skeletons** `g_chr_skeletons` (joint counts `g_chr_joint_counts`, nearly all 16):
+  node `{i32 model id, f32 rest offset xyz, ?, i16 joint, i16 nChildren, node*[]}`. Root (joint 0)
+  has no model. Standard humanoid: j1 chest → j2 head, j3–5 / j6–8 arms; j9 hips → j10–12 / j13–15 legs.
+  Every drawable node resolves to an existing model (test). Characters include players (57 = player1 /
+  James), zombies `zn*`/`zs*`, townspeople `hito_*`, animals, all bosses.
+- **Motions**: `mot/*.bin` starts with u32 offsets (one per listed motion id, `g_mot_id_lists[slot]`;
+  order not necessarily sorted). Motion = u32 stored frame count + frames of `align4(12 + 6n)`:
+  f32 root xyz, then i16 rx, ry, rz per joint (joint 0 = root). Stored count = `floor((F−1)/2) + 2`
+  where F = 60 Hz frame count `g_motion_frames[id]` — verified for all 1 116 motions; blocks padded to 8.
+- **Playback** (60 Hz frame f): root position = stored[f/2], halfway to stored[f/2+1] on odd f; root
+  rotation = stored[f/2]; joint rotation = stored[f/2] on f = 0 or odd, and on even f the integer
+  halfway point (shortest way round) from the angle shown at f−1 — i.e. joints lag positions by half a
+  frame. Matrix order: root `Rx·Ry·Rz·T(rootPos)·object`; joint `Rx·Ry·Rz·T(restOffset)·parent`
+  (Sega angle units, 65536 = 360°; rotations are D3DX-style).
+- Which motions a character uses is chosen by game code (AI/scripts); the viewer offers every motion
+  whose block size matches the joint count. Mismatched pairings can leave gaps (e.g. zsass with zom.bin);
+  the right pairing (zsass with assb.bin) is seamless.
+- **Prop skeletons** (30 types `g_prop_skeletons`: doors, glass, bridge, water…) use a different motion
+  layout (per-joint positions + angles, `(18n − 15) & ~3` per frame) and interpolation modes 0/1/2 —
+  needed for the stage scenery in M7.
+- Matrix stack: `mtx_push/pop/translate/rotx/roty/rotz/identity` (@004c2100…), each premultiplying.
+
 ## How these claims are checked
 
 `packages/formats/test/notes.test.ts` re-checks the notes against the user's own install

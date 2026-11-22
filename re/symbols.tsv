@@ -47,3 +47,43 @@
 005eb8e0	data	g_cull_table	prim flags & 3 → D3DCULL
 004c2bb0	fn	light_setup_single	ambient + one directional light (D3DLIGHT7 @0087a6d0), lights 1-15 off
 004c3490	fn	light_setup_multi	ambient @0087ade0 + up to 16 lights @0087a760 (stride 0x68), enables @0087ae6c
+00476a10	fn	mot_open	open mot\<name> for a motion slot, allocate buffer
+00476b30	fn	mot_read	read the opened mot file
+00476b80	fn	mot_register	g_motion_ptrs[id] = file + offsetTable[k] for each listed motion id
+00476c30	fn	mot_release	release a motion slot
+00476d40	fn	chr_motion_frame	character motion frame ptr: motion + 4 + frame * align4(n*6 + 15)
+00476da0	fn	motion_record20	motion + 4 + k * 0x14 (20-byte records)
+00454900	fn	prop_motion_pos	prop motion frame (positions): motion + 4 + frame * ((n*18 - 15) & ~3)
+00454930	fn	prop_motion_rot	prop motion frame rotations: pos frame + n*12 - 8
+00454680	fn	prop_skel_draw	draw a prop skeleton (g_prop_skeletons[type]) at its motion frame
+00454710	fn	prop_node_draw	recursive prop node: push, joint transform, draw model id, children, pop
+00454290	fn	prop_joint_transform	translate + rotZ/Y/X from prop motion (modes 0/1/2: none/half-frame/half-frame+big-angle blend)
+004c2100	fn	mtx_push	push matrix stack (copy top)
+004c20c0	fn	mtx_pop	pop n matrices
+004c2600	fn	mtx_translate	M = T(x,y,z) * M
+004c2450	fn	mtx_rotz	M = Rz(a) * M, Sega angle units
+004c2360	fn	mtx_roty	M = Ry(a) * M
+004c2270	fn	mtx_rotx	M = Rx(a) * M
+004c2690	fn	mtx_identity	load identity (@0058ff88)
+004729a0	fn	chr_pose_rest	character pose from frame 0 (rest-like), children via chr_node_rest
+00472ab0	fn	chr_node_rest	character node: translate rest offset, rotate by frame-0 angles, store joint matrix
+00472e10	fn	chr_root_frame	character root at frame f: position (half-frame lerp), root rotation, object transform
+00472b90	fn	chr_joint_transform	character joint at frame f (even frames: halfway from previous angle; blend mode)
+00473080	fn	chr_object_transform	object position/rotation/scale + root position (root-motion modes)
+00488640	fn	pol_load_model_slot	load one model of a pol file into global model slot id
+00488810	fn	tex_load_for_model_slot	load the same-index tex set and register the model's textures
+00503170	data	g_chr_skeletons	CharNode*[86]
+00503464	data	g_chr_joint_counts	i16[86]
+00503510	data	g_motion_frames	i16[motionId] frames at 60 Hz
+004f39f4	data	g_mot_names	char*[slot]
+00505a10	data	g_mot_id_lists	i16*[slot]
+00505ad8	data	g_mot_id_counts	u16[slot]
+0050e198	data	g_model_file	u16[modelId] → pol file index
+004f2bd0	data	g_pol_names	char*[file] (tex set uses the same index)
+0050d4b8	data	g_pol_id_lists	i16*[file] model ids in file order
+0050dd4c	data	g_pol_id_counts	u16[file]
+004f7f0c	data	g_prop_skeletons	PropNode*[30]
+004f7f84	data	g_prop_joint_counts	i16[30]
+004f7fc0	data	g_prop_interp_mode	u8[30]
+00a11d60	data	g_motion_ptrs	{ptr, state}[motionId]
+00a14fc0	data	g_model_slots	16-byte entries per global model id

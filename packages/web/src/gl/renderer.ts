@@ -4,7 +4,7 @@
  * lights/fog are ported in a later milestone.
  */
 import { CULL_TABLE, Cull, meshState, type MeshState, type PolModel } from '@ttotd/formats';
-import type { Mat4 } from './mat';
+import type { Mat4 } from '@ttotd/formats';
 
 const VS = `#version 300 es
 layout(location=0) in vec3 aPos;

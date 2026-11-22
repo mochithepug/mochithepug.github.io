@@ -65,3 +65,19 @@ main.wide { max-width: none; padding: 0 20px 20px; }
 #mdl-canvas-wrap { position: relative; flex: 1; min-height: 0; }
 #mdl-canvas { width: 100%; height: 100%; display: block; border-radius: 6px; cursor: grab; }
 #mdl-help { position: absolute; left: 10px; bottom: 8px; font-size: 11px; pointer-events: none; }
+
+/* --- character viewer ------------------------------------------------------------------ */
+#chr-layout { display: grid; grid-template-columns: 220px 200px 1fr; gap: 14px; height: calc(100vh - 190px); }
+#chr-types, #chr-motions { display: flex; flex-direction: column; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 8px; min-height: 0; }
+#chr-filter { padding: 6px 8px; background: var(--bg); color: var(--fg); border: 1px solid var(--line); border-radius: 6px; font: inherit; margin-bottom: 6px; }
+#chr-type-list, #chr-motion-list { overflow-y: auto; flex: 1; font-size: 13px; }
+#chr-view { margin: 0; display: flex; flex-direction: column; min-height: 0; padding: 8px 12px; }
+#chr-toolbar { display: flex; gap: 10px; align-items: center; padding-bottom: 8px; flex-wrap: wrap; }
+#chr-toolbar .spacer { flex: 1; }
+#chr-toolbar select { background: var(--bg); color: var(--fg); border: 1px solid var(--line); border-radius: 4px; }
+#chr-frame { width: 180px; }
+.mono { font-variant-numeric: tabular-nums; min-width: 70px; }
+.group-head { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .04em; margin: 8px 4px 2px; }
+.canvas-wrap { position: relative; flex: 1; min-height: 0; }
+.canvas-wrap canvas { width: 100%; height: 100%; display: block; border-radius: 6px; cursor: grab; }
+.canvas-help { position: absolute; left: 10px; bottom: 8px; font-size: 11px; pointer-events: none; }

@@ -12,7 +12,7 @@ import {
   type TextureSet,
 } from '@ttotd/formats';
 import type { GameFS } from './ingest/gamefs';
-import { identity, lookAtLH, perspectiveFovLH } from './gl/mat';
+import { identity, lookAtLH, perspectiveFovLH } from '@ttotd/formats';
 import { Renderer, type GpuModel, type TextureSource } from './gl/renderer';
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;

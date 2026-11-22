@@ -6,3 +6,5 @@ export * from './pvr.ts';
 export * from './texsets.ts';
 export * from './pol.ts';
 export * from './renderstate.ts';
+export * from './d3dmath.ts';
+export * from './character.ts';
