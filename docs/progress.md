@@ -223,3 +223,27 @@ animate apart.
 **Traced:** cars are code-built (body + spinning wheels) and event-driven, so placing them is M9.
 **Open:** mode-2 big-turn matrix blend (approximated); #16 frame range; #29 has no motion; four
 pairings not yet seen in code. Props and cars appear in the Stage view with M9 (their owners place them).
+
+## M9 — Event scripts (in progress)
+
+### 9a — Decode the event script (2026-11-23) ✅ verified by user 2026-11-23
+**Delivered:** `events.ts` (block table, scripts, command lengths for all 117 opcodes, the exe's next-block
+rules); Events tab (stage select, blocks with their next-block rule, every script's commands with names
+and notes: dialogue text, skippable scenes, waits in seconds, mode branches).
+**Verified:** all 458 scripts in the six stage files decode cleanly (tests); stage n ↔ rule table n − 1
+(block counts match); Stage 1: five skippable scenes, the first spoken line after the opening scene is
+dialogue 1, as in the user's video notes.
+**Next (9b):** name the remaining commands (camera path changes, title card, light/fog, spawns, sounds).
+
+### 9a+ — Event script player (2026-11-23) ✅ verified by user 2026-11-23
+**Delivered:** `evtplayer.ts` (runs a block frame by frame as the exe: camera queue and camera time, the
+three wait kinds with the exe's yield rule, say(), skippable, light & fog set/fade/direction, block order);
+Stage tab camera mode **event script**: camera follows the script's paths, subtitles, blinking skip sign
+(scr_common texture 23 at (384, 18)), the script's light & fog, and a live log of every triggered action.
+**Verified:** test — block 0 plays path 48 → path 49 (line 1 at camera time 6) → lines 2–3 → path 50 ×3 with
+lines 4–6 → first fight; matches the user's video notes. Screenshots of the fly-over (skip sign), line 1 and
+line 2.
+**Not yet:** title card; fights (held for a chosen time); characters, enemies and props in scenes; sounds;
+camera modes 0x10/0x11/0x12/0x14/0x60 details.
+**Follow-ups (user):** skip sign blinks and shows only in cut scenes; cut-scene letterbox bars (60 px,
+provisional); block dropdown follows playback; `[hidden]` always hides (toolbars' display rules overrode it).

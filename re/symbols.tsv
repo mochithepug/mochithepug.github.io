@@ -174,3 +174,29 @@
 005b5b10	data	g_prop_spawn_defs	12-byte records: i16 prop type, i16 motion id, i16 ?, …
 004218f0	fn	car_task	car object: body + spinning wheels from parts; trigger time → explosion effect + burning model sequence
 00476550	fn	mtx_blend_rot	blend two rotation matrices (used by prop mode 2 for big turns)
+0044e8b0	fn	evt_run	event interpreter: op = *ptr; g_evt_ops[op](); until yield flag DAT_00a3b860
+0044ec10	fn	evt_next_script	opcode 0x4F: next script of the block, or next block by g_evt_block_rules
+0044ec00	fn	evt_op_halt	opcode 0x4E: yield without advancing
+0044f940	fn	evt_op_say	opcode 0x2D: say(u16 dialogue id)
+0044f5e0	fn	evt_op_wait_frame	opcode 0x41: wait until segment frame N (0 = until timer runs out)
+0044eab0	fn	evt_op_segment_start	opcode 0x4D: reset segment state/timer, reseed RNG
+0044fd70	fn	evt_op_branch_mode	opcode 0x73: continue if game mode matches (>=100: not equal) else jump
+005e98b8	data	g_evt_block_rules	per mode: 8-byte {i16 kind, i16 a, b, c} next-block rules, kind -1 ends
+00a10c08	data	g_evt_mode	current event mode (stage n → n-1)
+00a11874	data	g_evt_block	current block index
+00a11850	data	g_evt_step	current script index within the block (from 1)
+00a3b264	data	g_evt_choice	route choice used by kind-1 block rules
+00a3b860	data	g_evt_yield	set by a handler to end this frame's interpretation
+0040ca70	fn	cam_queue_run	camera command queue: run current mode fn; when done (DAT_00a10c10) pop next (params → 0xa14aa4…), same frame
+005a2a30	data	g_cam_mode_tables	camera mode handlers by (mode >> 4)[mode & 15]
+0040dab0	fn	cam_mode_path	mode 0x40: [start,end,pathId,flags] play path; start=end jump; flags&2 store resume path
+0040dcd0	fn	cam_path_step	per frame: time = counter; sample path; remaining = end - counter; done when end <= counter
+0040de00	fn	cam_mode_fight	mode 0x21: camera to the fight logic (table @005982f0)
+00a14a30	data	g_cam_time	camera time (path sample time; event waits compare against it)
+00a39468	data	g_cam_remaining	frames left in the current path shot (event wait 0)
+00a11924	data	g_cam_pending	camera commands queued or running (event op 0x40 waits for 0)
+0044f650	fn	evt_op_wait_frames	opcode 0x42: wait N frames
+0044f5a0	fn	evt_op_wait_camera	opcode 0x40: wait while camera commands are pending
+00450be0	fn	evt_light_fade	opcodes 0x23/0x27: fade light/fog value to target by step per frame
+00450240	fn	fade_step	{active, current, target, step}: move current by step toward target
+00a3b3a0	data	g_light_fades	fade records for light set 0 (16 bytes each, same order as the 0x20 subs)

@@ -25,6 +25,7 @@
       <button data-tab="props" class="tab">Props</button>
       <button data-tab="words" class="tab">Words</button>
       <button data-tab="stage" class="tab">Stage</button>
+      <button data-tab="events" class="tab">Events</button>
     </nav>
     <main id="tab-files">
       <section id="report" hidden></section>
@@ -142,6 +143,24 @@
         </section>
       </div>
     </main>
+    <main id="tab-events" class="wide" hidden>
+      <div id="evt-layout">
+        <aside id="evt-blocks">
+          <select id="evt-file"></select>
+          <div class="muted small" id="evt-blocks-head">Blocks</div>
+          <div id="evt-block-list"></div>
+        </aside>
+        <section id="evt-view">
+          <div id="evt-toolbar">
+            <strong id="evt-title">Pick a block</strong>
+            <span id="evt-info" class="muted"></span>
+            <span class="spacer"></span>
+            <label title="Show every word of each command"><input id="evt-raw" type="checkbox" /> raw words</label>
+          </div>
+          <div id="evt-listing" class="mono"></div>
+        </section>
+      </div>
+    </main>
     <main id="tab-words" class="wide" hidden>
       <div id="wrd-layout">
         <aside id="wrd-lists">
@@ -200,7 +219,7 @@
             <strong id="stg-title">Stage</strong>
             <span id="stg-info" class="muted"></span>
             <span class="spacer"></span>
-            <label>camera <select id="stg-cammode"><option value="fly">free fly</option><option value="path">game path</option></select></label>
+            <label>camera <select id="stg-cammode"><option value="fly">free fly</option><option value="path">game path</option><option value="events">event script</option></select></label>
             <span id="stg-path-controls" hidden>
               <select id="stg-path"></select>
               <button id="stg-play" class="small">▶ play</button>
@@ -209,13 +228,28 @@
               <select id="stg-speed"><option value="1" selected>1×</option><option value="0.5">½×</option><option value="0.25">¼×</option><option value="2">2×</option></select>
               <label title="When a path ends, continue into the path that starts where it ends (first option at a branch); stop at the end of a run"><input id="stg-chain" type="checkbox" checked /> follow route</label>
             </span>
+            <span id="stg-evt-controls" hidden>
+              <select id="stg-evt-block" title="Block to start from (Stage 1's event script)"></select>
+              <button id="stg-evt-play" class="small">▶ play</button>
+              <button id="stg-evt-restart" class="small secondary">restart</button>
+              <select id="stg-evt-speed"><option value="1" selected>1×</option><option value="0.5">½×</option><option value="2">2×</option><option value="4">4×</option></select>
+              <label title="Fights are not ported yet: the camera holds this long where enemies would attack">fight <select id="stg-evt-hold"><option value="60">1 s</option><option value="180" selected>3 s</option><option value="600">10 s</option></select></label>
+              <span id="stg-evt-clock" class="muted mono"></span>
+            </span>
             <label><input id="stg-lit" type="checkbox" checked /> lighting</label>
             <label><input id="stg-cull" type="checkbox" checked /> culling</label>
             <span id="stg-pos" class="muted mono"></span>
           </div>
           <div class="canvas-wrap"><canvas id="stg-canvas" tabindex="0"></canvas>
+            <div id="stg-overlay" hidden>
+              <div id="stg-bar-top" class="cine-bar"></div>
+              <div id="stg-bar-bottom" class="cine-bar"></div>
+              <canvas id="stg-skip" width="256" height="32"></canvas>
+              <div id="stg-subtitle"></div>
+            </div>
             <div class="canvas-help muted">drag: look · W/A/S/D: move · Q/E: down/up · shift: fast · wheel: speed</div>
           </div>
+          <div id="stg-evt-log" class="mono" hidden></div>
         </section>
       </div>
     </main>

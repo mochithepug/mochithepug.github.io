@@ -14,3 +14,5 @@ export * from './camera.ts';
 export * from './scenelight.ts';
 export * from './dialogue.ts';
 export * from './prop.ts';
+export * from './events.ts';
+export * from './evtplayer.ts';

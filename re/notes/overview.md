@@ -278,6 +278,81 @@ then re-analysis: **920 functions recovered, coverage 92 %** (3 261 functions de
   dialogue 3 = two lines, 420 frames, switching at 130 remaining. Port: `packages/formats/src/dialogue.ts`.
 - Open: sound id (e.g. 0x20000182) → WAV file mapping; which dialogue plays when = event script (M9).
 
+## Event scripts (M9)
+
+Port: `packages/formats/src/events.ts`; viewer: Events tab.
+- **Loading:** files are raw with DC pointers; `comevtbl` at DC 0x0CEB5800, the stage file at DC 0x0CEB5A00
+  (see the file-loading table). `comevtbl` words 0–13 point each mode at the stage table (mode 9 at
+  0x0CEB5994 inside comevtbl).
+- **Layout:** u32 block pointers (−1-terminated) → block = −1-terminated list: entry 0 = set-up (Stage 1
+  block 0 points into comevtbl), entries 1… = scripts run in order. Commands are u32 words: opcode, then
+  arguments.
+- **Block order:** `g_evt_block_rules` @005e98b8[mode] gives 8-byte rules {kind, a, b, c}: kind 0 → a,
+  kind 1 → [a, b, c][choice DAT_00a3b264], kind 2 → this + 1 (Stage 1's last block 14 → 15 = end).
+  Stage n uses mode n − 1 (rule counts equal block counts for all six stages).
+- **Interpreter:** `evt_run` @0044e8b0 loops `g_evt_ops[op]()` until the yield flag DAT_00a3b860 is set.
+  `evt_next_script` (0x4F) moves to the block's next script, or the next block by rule.
+- **Command lengths** (bytes, op word included):
+  - Most commands are fixed; the table is in events.ts.
+  - Lists ending in −1: 0x01–0x0D except 0x0E, 0x0F–0x13, 0x72.
+  - 0x60: 5 words, then (count, value) pairs until −1.
+  - 0x49–0x4B: words until −2 (one list per player count).
+  - 0x30/0x6C/0x6D: 8 + trunc(arg/16)·4 (inline data).
+  - 0x20/0x24: by subcommand (5 and 9 → 20; 0–10 → 12; else 8; case 5 falls through into 4 in the
+    exe).
+  - 0x21/0x23/0x25/0x27: 16. 0x69: 8 if arg ≠ 0, else 12.
+  - 0x00/0x2A/0x34/0x3C/0x4C never advance (unused).
+  - **Verified:** all 458 scripts of the six stage files decode into whole commands ending on a
+    terminator before the next script.
+- **Identified commands:**
+  - 0x2D `say(dialogue)` (u16 id), 0x2C skippable on/off, 0x41/0x42 wait until segment frame N (0 =
+    wait for the timer), 0x4D segment start (resets the timer and RNG), 0x4E halt, 0x4F next script,
+    0x71 return, 0x73 branch on game mode (≥ 100 = not equal).
+  - 0x09/0x0A/0x72 spawn lists (pointers to records: type, …, position, angles).
+  - 0x0E set slot xyz (a11880).
+  - 0x20–0x27: two families of view/parameter commands with subcommands (camera/light? → 9b).
+- **What the script controls (decoded while building the player, `evtplayer.ts`):**
+  - **Camera** — 0x30 `camera` (0x6C/0x6D: one-/two-player only) queues a camera command: arg = mode, and
+    its high nibble = parameter word count. `cam_queue_run` @0040ca70 copies the parameters to
+    0xA14AA4… and runs the mode handler from table @005a2a30; the next command runs in the same frame.
+    - Mode 0x40 [start, end, pathId, flags]: play camera path `pathId` (global id; Stage 1 = 48–70 =
+      local 0–22). Camera time DAT_00a14a30 = start (−1 = keep) and +1 per frame up to end
+      (FUN_0040dc20/0040dcd0); start = end jumps; flags & 2 stores the path to resume after the fight
+      (FUN_0040dba0).
+    - Mode 0x21 [n]: hand the camera to the fight (gameplay).
+    - Modes 0x11 / 0x12 / 0x14 / 0x60: screen effect (FUN_0040e2c0), player state, view player, look-at.
+  - **Waits:**
+    - 0x41 N: continue once N < camera time.
+    - 0x41 0: wait until the shot has < 1 frame left (DAT_00a39468).
+    - 0x42 N: wait N frames.
+    - 0x40: wait while camera commands are pending (DAT_00a11924).
+    - A wait reached mid-frame always yields once first (yield flag DAT_00a3b860 persists across
+      frames). 0x4F does not yield.
+  - **Light & fog:**
+    - 0x20 sets immediately. Subs 0/1 fog start/end (pointer to a float); 2/3/4/5 fog colour (0–255,
+      packed into FOGCOLOR by FUN_00451470); 6/7/8/9 light colour (pointers); 10 intensity.
+    - 0x23 fades the same values, using {active, current, target, step} records @00a3b3a0 stepped by
+      FUN_00450240 (step per frame).
+    - 0x18 sets the light direction (pitch, yaw). 0x24/0x27/0x19 do the same for a second set
+      @00a14140.
+  - **Sound:**
+    - 0x38/0x3A play a sound (FUN_00495660); 0x39/0x3B repeat one.
+    - 0x50–0x57 are sound/bank commands. 0x5D/0x5F: music/stream.
+  - **Screen:** 0x61 screen mode (FUN_004b1510).
+- **Stage 1 block 0 as played:**
+  - Light fades in; path 48 fly-over (230 frames), skippable from camera time 21.
+  - Fade to black (fog closes in, light → 0).
+  - Path 49 with "We're meeting G over there." at camera time 6.
+  - Lines 2–3 on path 49, then path 50 in three pieces with lines 4–6.
+  - First fight (camera mode 0x21 [4]), then block 1.
+  - Matches the user's video notes. Title card (≈3 s black card) not yet located: candidates are
+    camera mode 0x11 [1] and `screen_mode 0 25`.
+- **Stage 1 shape:**
+  - Block 0 (opening): skippable scene → `say(1)` "We're meeting G over there." → skippable scene with
+    lines 2–5 → line 6.
+  - Block 1 has two skippable scenes. Block 14 is the final one (lines 24–40).
+  - Branches: block 1 → 10 | 9, block 4 → 6 | 13, block 6 → 11 | 5, block 9 → 2 | 7 | 12 (by choice).
+
 ## Props (M7d)
 
 Port: `packages/formats/src/prop.ts`; viewer: Props tab.
@@ -334,6 +409,13 @@ Port: `packages/formats/src/prop.ts`; viewer: Props tab.
   u32 argument; script pointer DAT_00a39668). Opcode table `g_evt_ops` @005a2a4c (117 entries).
   On: DAT_00a11a38 = 1. Enter (input bit 8 for P1, 0x80000 for P2, FUN_004840a0) sets DAT_00a10c18; the
   task then sets the skip flags DAT_00a11a14 / DAT_00a1112c (subtitles stop) and calls FUN_00496670.
+- Cut-scene objects spawned from `comevtbl` records (event op 0x0A): type 0x63 = `skip_task_start` (every
+  skippable scene starts with it), type 0x60 = FUN_00422c00 at the scene's end (gameplay HUD on: sets
+  DAT_00a14048 |= 0x20, loads the stage's HUD sprites). Object task table @00a11180 is filled from
+  {type, fn} pairs @005a741c (FUN_0044e730).
+- **Letterbox bars** in cut scenes (user): drawing code not found yet (not a sprite at x = 0, not an
+  obvious viewport/black fill). The Stage tab shows 60 px bars (640×360 picture) while the scene is
+  skippable — **height provisional**, to measure from the user's video.
 - `evt/*.bin` are **stored raw** (not LZ) and contain Dreamcast RAM pointers (0x0CEBxxxx), so they need
   relocation (M9). Stage 1 has **5 skippable scenes**: 0x2C on/off at offsets 0x24C/0x268, 0x468/0x530,
   0xF18/0x102C, 0x119C/0x1210, 0x64BC/0x6654. Each "on" follows the same command `… 0A 0CEB5854 FFFFFFFF`.

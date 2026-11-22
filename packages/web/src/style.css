@@ -1,3 +1,5 @@
+/* The hidden attribute always wins over display rules below (several toolbars use display:flex). */
+[hidden] { display: none !important; }
 :root { color-scheme: dark; --bg:#121214; --panel:#1c1c20; --line:#2c2c33; --fg:#e6e6e6; --muted:#8a8a93;
   --ok:#4caf6a; --warn:#d9a441; --err:#e05252; --acc:#c23b3b; font: 14px/1.45 system-ui, sans-serif; }
 body { margin:0; background:var(--bg); color:var(--fg); }
@@ -132,3 +134,46 @@ main.wide { max-width: none; padding: 0 20px 20px; }
 #prp-toolbar .spacer { flex: 1; }
 #prp-toolbar select { background: var(--bg); color: var(--fg); border: 1px solid var(--line); border-radius: 4px; }
 #prp-frame { width: 180px; }
+
+/* Events tab (M9a) */
+#evt-layout { display: grid; grid-template-columns: 260px 1fr; gap: 14px; height: calc(100vh - 190px); }
+#evt-blocks { display: flex; flex-direction: column; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 8px; min-height: 0; gap: 6px; }
+#evt-file { background: var(--bg); color: var(--fg); border: 1px solid var(--line); border-radius: 6px; padding: 4px; font: inherit; }
+#evt-block-list { overflow-y: auto; flex: 1; font-size: 13px; }
+#evt-block-list .rule { color: var(--muted, #8a8f98); font-size: 12px; }
+#evt-view { margin: 0; display: flex; flex-direction: column; min-height: 0; padding: 8px 12px; }
+#evt-toolbar { display: flex; gap: 10px; align-items: center; padding-bottom: 8px; flex-wrap: wrap; }
+#evt-toolbar .spacer { flex: 1; }
+#evt-listing { overflow-y: auto; flex: 1; font-size: 12.5px; line-height: 1.55; }
+#evt-listing .script-head { margin: 12px 0 4px; color: #e0b050; font-weight: 600; }
+#evt-listing .cmd { display: grid; grid-template-columns: 64px 140px 1fr; gap: 8px; padding: 0 4px; border-radius: 3px; }
+#evt-listing .cmd:hover { background: rgba(255,255,255,0.05); }
+#evt-listing .off { color: #6c7280; }
+#evt-listing .op.known { color: #7fc8ff; }
+#evt-listing .op.unknown { color: #9aa0aa; }
+#evt-listing .note { color: #a8e0a0; }
+#evt-listing .say .note { color: #ffd27f; }
+#evt-listing .skip { background: rgba(255,120,60,0.10); }
+
+/* Stage tab: event script playback (M9) */
+#stg-evt-controls { display: inline-flex; gap: 8px; align-items: center; }
+#stg-evt-controls select { background: var(--bg); color: var(--fg); border: 1px solid var(--line); border-radius: 4px; }
+#stg-overlay { position: absolute; pointer-events: none; overflow: hidden; }
+#stg-skip { position: absolute; image-rendering: auto; }
+#stg-subtitle { position: absolute; left: 0; right: 0; bottom: 6%; text-align: center; color: #fff; font: 600 2.6cqh/1.3 system-ui, sans-serif;
+  text-shadow: 0 0 3px #000, 0 0 3px #000, 1px 1px 2px #000; padding: 0 6%; }
+#stg-overlay { container-type: size; }
+#stg-evt-log { height: 150px; overflow-y: auto; font-size: 12px; line-height: 1.45; margin-top: 8px; background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 6px 8px; }
+#stg-evt-log .t { color: #6c7280; display: inline-block; width: 92px; }
+#stg-evt-log .camera { color: #7fc8ff; }
+#stg-evt-log .say { color: #ffd27f; }
+#stg-evt-log .skip { color: #ff9a6a; }
+#stg-evt-log .light { color: #c3a6ff; }
+#stg-evt-log .flow { color: #9aa0aa; }
+#stg-evt-log .spawn { color: #a8e0a0; }
+#stg-evt-log .sound, #stg-evt-log .other { color: #7d838d; }
+#stg-overlay .cine-bar { position: absolute; left: 0; right: 0; background: #000; }
+#stg-bar-top { top: 0; }
+#stg-bar-bottom { bottom: 0; }
+/* .canvas-wrap canvas { display: block } would override [hidden]; the overlay canvas uses visibility instead */
+#stg-skip { width: auto; height: auto; }

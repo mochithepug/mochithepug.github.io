@@ -12,6 +12,12 @@ import {
   identity,
   mul,
   readCameraSlots,
+  EventFile,
+  EventPlayer,
+  EVT_COM_BASE,
+  readBlockRules,
+  readDialogue,
+  STAGE_EVENT_FILES,
   type PolModel,
 } from '@ttotd/formats';
 import { Assets } from './assets';
@@ -44,6 +50,9 @@ interface Ctx {
   /** Paths that start where each path ends (route continuity). */
   camNext: number[][];
   playing: boolean;
+  /** Event script playback (camera mode "event script"). */
+  evt?: { player: EventPlayer; playing: boolean; acc: number; logShown: number };
+  skipSign?: boolean;
 }
 let ctx: Ctx | undefined;
 
@@ -81,6 +90,14 @@ export async function initStage(fs: GameFS, params = new URLSearchParams()) {
   for (const [k, n] of [['x', 0], ['y', 1], ['z', 2]] as const) if (params.has(k)) cam.pos[n] = Number(params.get(k));
   if (params.has('yaw')) cam.yaw = Number(params.get('yaw'));
   if (params.has('pitch')) cam.pitch = Number(params.get('pitch'));
+  if (params.has('evt')) {
+    $<HTMLSelectElement>('stg-cammode').value = 'events';
+    await startEvents(Number(params.get('evt')), params.get('play') !== '0');
+    setCameraModeEventsUi();
+    if (params.has('frames') && ctx.evt) for (let i = 0; i < Number(params.get('frames')); i++) ctx.evt.player.step();
+    renderEventLog();
+    redraw();
+  }
   if (params.has('campath')) {
     $<HTMLSelectElement>('stg-cammode').value = 'path';
     setCameraMode('path', Number(params.get('campath')), Number(params.get('camt') ?? 0));
@@ -137,6 +154,20 @@ async function loadStageCamera(stage: string) {
 function setCameraMode(mode: string, index = 0, t = 0) {
   if (!ctx) return;
   const wrap = $('stg-canvas').parentElement!;
+  const events = mode === 'events' && !!ctx.camFile;
+  $('stg-evt-controls').hidden = !events;
+  $('stg-evt-log').hidden = !events;
+  $('stg-overlay').hidden = !events;
+  if (!events) ctx.evt = undefined;
+  if (events) {
+    ctx.path = undefined;
+    ctx.playing = false;
+    $('stg-path-controls').hidden = true;
+    wrap.classList.add('letterbox');
+    void startEvents(Number($<HTMLSelectElement>('stg-evt-block').value || 0));
+    updatePlayButton();
+    return;
+  }
   if (mode === 'path' && ctx.camFile) {
     ctx.path = { file: ctx.camFile, index: Math.min(index, ctx.camIds.length - 1), t, ids: ctx.camIds };
     $<HTMLSelectElement>('stg-path').value = String(ctx.path.index);
@@ -156,6 +187,112 @@ function setCameraMode(mode: string, index = 0, t = 0) {
 
 function updatePlayButton() {
   $('stg-play').textContent = ctx?.playing ? '❚❚ pause' : '▶ play';
+  $('stg-evt-play').textContent = ctx?.evt?.playing ? '❚❚ pause' : '▶ play';
+}
+
+// --- event script playback (M9) -----------------------------------------------------------------
+function setCameraModeEventsUi() {
+  if (!ctx) return;
+  $('stg-evt-controls').hidden = false;
+  $('stg-evt-log').hidden = false;
+  $('stg-overlay').hidden = false;
+  $('stg-path-controls').hidden = true;
+  $('stg-canvas').parentElement!.classList.add('letterbox');
+}
+const stageNumber = () => Number(ctx?.stage.replace(/\D/g, '') || 1);
+
+async function startEvents(block: number, play = true) {
+  if (!ctx) return;
+  const n = stageNumber();
+  const name = STAGE_EVENT_FILES[n - 1];
+  if (!name || !ctx.assets.fs.has(`evt/${name}`)) return;
+  const ef = new EventFile(await ctx.assets.file(`evt/${name}`));
+  const common = ctx.assets.fs.has('evt/comevtbl.bin') ? new EventFile(await ctx.assets.file('evt/comevtbl.bin'), EVT_COM_BASE) : undefined;
+  const pe = ctx.assets.pe;
+  const sel = $<HTMLSelectElement>('stg-evt-block');
+  if (sel.dataset.stage !== String(n)) {
+    sel.replaceChildren(...ef.blocks().map((b) => new Option(`block ${b.index}`, String(b.index))));
+    sel.dataset.stage = String(n);
+  }
+  sel.value = String(block);
+  const player = new EventPlayer(ef, {
+    rules: readBlockRules(pe, n - 1),
+    dialogue: (id) => readDialogue(pe, id, 0) ?? readDialogue(pe, id, 2),
+    common,
+    holdFrames: Number($<HTMLSelectElement>('stg-evt-hold').value),
+  });
+  player.start(block);
+  ctx.evt = { player, playing: play, acc: 0, logShown: 0 };
+  $('stg-evt-log').replaceChildren();
+  await loadSkipSign();
+  updatePlayButton();
+  redraw();
+}
+
+/** The "Press the Enter key to skip" sprite: scr_common.bin texture 23 (sprite 0x20F), drawn at (384, 18). */
+async function loadSkipSign() {
+  if (!ctx || ctx.skipSign !== undefined) return;
+  const tex = await ctx.assets.textures('scr_common.bin', false);
+  const t = tex?.get(23);
+  const cv = $<HTMLCanvasElement>('stg-skip');
+  if (!t) {
+    ctx.skipSign = false;
+    return;
+  }
+  cv.width = t.width;
+  cv.height = t.height;
+  const img = new ImageData(t.width, t.height);
+  for (let y = 0; y < t.height; y++) img.data.set(t.rgba.subarray((t.height - 1 - y) * t.width * 4, (t.height - y) * t.width * 4), y * t.width * 4);
+  cv.getContext('2d')!.putImageData(img, 0, 0);
+  ctx.skipSign = true;
+}
+
+function renderEventLog() {
+  if (!ctx?.evt) return;
+  const { player } = ctx.evt;
+  const box = $('stg-evt-log');
+  const fresh = player.log.slice(ctx.evt.logShown);
+  if (!fresh.length) return;
+  ctx.evt.logShown = player.log.length;
+  for (const e of fresh) {
+    const d = document.createElement('div');
+    d.className = e.kind;
+    const t = document.createElement('span');
+    t.className = 't';
+    t.textContent = `${(e.frame / 60).toFixed(2)}s  ${e.timer}`;
+    d.append(t, document.createTextNode(e.text));
+    box.append(d);
+  }
+  while (box.childElementCount > 400) box.firstElementChild!.remove();
+  box.scrollTop = box.scrollHeight;
+}
+
+/** Letterbox bar height in 640×480 pixels (provisional, see placeOverlay). */
+const CINE_BAR = 60;
+
+/** Overlays sit exactly on the 4:3 game picture (640×480 coordinates). */
+function placeOverlay() {
+  if (!ctx?.evt) return;
+  const canvas = $<HTMLCanvasElement>('stg-canvas'), ov = $('stg-overlay');
+  Object.assign(ov.style, { left: `${canvas.offsetLeft}px`, top: `${canvas.offsetTop}px`, width: `${canvas.clientWidth}px`, height: `${canvas.clientHeight}px` });
+  const sx = canvas.clientWidth / 640, sy = canvas.clientHeight / 480;
+  const p = ctx.evt.player;
+  const skip = $<HTMLCanvasElement>('stg-skip');
+  Object.assign(skip.style, { left: `${384 * sx}px`, top: `${18 * sy}px`, width: `${256 * sx}px`, height: `${32 * sy}px` });
+  // skip_task @00423da0: visible while frame % 60 < 45 (visibility, not [hidden]: a stylesheet rule forces
+  // canvases in .canvas-wrap to display:block, which defeated the hidden attribute)
+  skip.style.visibility = p.skippable && ctx.skipSign && p.frame % 60 < 45 ? 'visible' : 'hidden';
+  // Cut-scene letterbox: shown while the scene is skippable. Bar height is provisional (60 px of 480 → a
+  // 640×360 picture) until measured against the original / traced in the exe.
+  const bar = CINE_BAR * sy;
+  for (const id of ['stg-bar-top', 'stg-bar-bottom']) Object.assign($(id).style, { height: `${bar}px`, visibility: p.skippable ? 'visible' : 'hidden' });
+  const sub = p.subtitle;
+  $('stg-subtitle').textContent = sub ? sub.speech.lines[sub.line]?.text ?? '' : '';
+  // Keep the block dropdown on the block being played (unless the user is using it).
+  const sel = $<HTMLSelectElement>('stg-evt-block');
+  if (document.activeElement !== sel && sel.value !== String(p.block)) sel.value = String(p.block);
+  const sh = p.shot;
+  $('stg-evt-clock').textContent = `block ${p.block} · ${(p.frame / 60).toFixed(1)} s · ${sh ? `path ${ctx.camIds.indexOf(sh.pathId)} t ${sh.t}` : 'no shot'}${sh?.fight ? ' · fight' : ''}${p.done ? ' · end' : ''}`;
 }
 
 function renderFileList() {
@@ -235,6 +372,20 @@ function tick(now: number) {
   const dt = Math.min((now - ctx.last) / 1000, 0.1);
   ctx.last = now;
   if ($('tab-stage').hidden) return;
+  if (ctx.evt) {
+    const e = ctx.evt;
+    if (e.playing && !e.player.done) {
+      e.acc += dt * 60 * Number($<HTMLSelectElement>('stg-evt-speed').value);
+      let n = 0;
+      while (e.acc >= 1 && n++ < 16) {
+        e.acc -= 1;
+        e.player.step();
+      }
+      renderEventLog();
+      redraw();
+    }
+    return;
+  }
   if (ctx.path) {
     if (ctx.playing) {
       const p = ctx.path, dur = p.file.duration(p.index);
@@ -262,7 +413,7 @@ export function redraw() {
     pending = false;
     if (!ctx || $('tab-stage').hidden) return;
     const r = ctx.renderer, canvas = r.canvas;
-    if (ctx.path) {
+    if (ctx.path || ctx.evt) {
       // The game renders 640×480: show the game camera at 4:3, letterboxed.
       const wrap = canvas.parentElement!;
       const cw = Math.min(wrap.clientWidth, (wrap.clientHeight * 4) / 3);
@@ -284,18 +435,29 @@ export function redraw() {
       eye = c.eye;
       proj = cameraProjection(0x1d3b, w / h);
     }
+    const shot = ctx.evt?.player.shot;
+    const local = shot ? ctx.camIds.indexOf(shot.pathId) : -1;
+    if (ctx.evt && ctx.camFile && local >= 0) {
+      const c = cameraFromSample(ctx.camFile.sample(local, shot!.t));
+      view = mul(cameraView(c), D3D_VIEW_FLIP);
+      eye = c.eye;
+      proj = cameraProjection(0x1d3b, w / h);
+    }
     const lit = $<HTMLInputElement>('stg-lit').checked, culling = $<HTMLInputElement>('stg-cull').checked;
-    const sl = sceneLight();
+    const sl = ctx.evt ? ctx.evt.player.light : sceneLight();
     const lighting = d3dLighting(sl);
     const fog = sl.fog ? { color: sl.fogColor } : (false as const);
     if (sl.fog) r.clear(...sl.fogColor);
     for (const f of ctx.files) if (f.on && f.gpu) r.draw(f.gpu, f.tex, { world: identity(), view, proj, lit, culling, lighting, eye, fog });
+    if (ctx.evt) placeOverlay();
     if (ctx.path) {
       const s = ctx.path.file.sample(ctx.path.index, ctx.path.t);
       const c = cameraFromSample(s);
       $<HTMLInputElement>('stg-time').value = String(Math.floor(ctx.path.t));
       $('stg-time-label').textContent = `${Math.floor(ctx.path.t)} / ${Math.round(ctx.path.file.duration(ctx.path.index))}`;
       $('stg-pos').textContent = `eye (${s.eye.map((v) => v.toFixed(0)).join(', ')}) pitch ${c.pitch} yaw ${c.yaw}`;
+    } else if (ctx.evt) {
+      $('stg-pos').textContent = `eye (${eye.map((v) => v.toFixed(0)).join(', ')})`;
     } else {
       const p = ctx.cam.pos.map((v) => v.toFixed(0)).join(', ');
       $('stg-pos').textContent = `pos (${p}) yaw ${ctx.cam.yaw.toFixed(2)} pitch ${ctx.cam.pitch.toFixed(2)}`;
@@ -346,4 +508,15 @@ $('sl-reset').addEventListener('click', () => {
   $<HTMLInputElement>('sl-fog').checked = d.fog;
   $<HTMLInputElement>('sl-fc').value = '#000000';
   redraw();
+});
+
+$('stg-evt-play').addEventListener('click', () => {
+  if (!ctx?.evt) return;
+  ctx.evt.playing = !ctx.evt.playing;
+  updatePlayButton();
+});
+$('stg-evt-restart').addEventListener('click', () => void startEvents(Number($<HTMLSelectElement>('stg-evt-block').value || 0)));
+$<HTMLSelectElement>('stg-evt-block').addEventListener('change', (e) => void startEvents(Number((e.target as HTMLSelectElement).value)));
+$<HTMLSelectElement>('stg-evt-hold').addEventListener('change', () => {
+  if (ctx?.evt) ctx.evt.player.opts.holdFrames = Number($<HTMLSelectElement>('stg-evt-hold').value);
 });
