@@ -802,3 +802,18 @@ Characters have extra **skin models** whose vertices follow two joints, filling 
 - Not ported: the fight camera turning to the active enemies (`FUN_0040d7a0`: look at the first one or two
   entries of DAT_00a147e0, blend with FUN_0040e2f0), the return blend (FUN_0040ce90), the camera list of mode 0x60
   (FUN_0040df90 / FUN_0040e4a0), DAT_00816f7c.
+
+## Stage 1 object survey (2026-11-23)
+
+Every spawn in st1evtbl.bin (ops 0x03 / 0x09 / 0x0A / 0x0B / 0x0C), by type — count, word flags @005a2848:
+0x41 ×52 (placed props, no words) · **0x30 ×29 zombies (1)** — behaviours 18, 1, 13, 14, 33, 26 · 0x44 ×10 · 0x33 ×10 ·
+**0x10 ×7 (0x414, via op 0x0C)** · 0x25 ×6 · 0x63 ×5 (skip task) · 0x20 ×5 (no words: not a typed enemy) · 0x52 ×4
+(op 0x0C) · 0x40 ×4 · 0x28 ×4 · 0x24 ×3 · **0x11 ×3 (0x14, op 0x0C)** · 0x22 ×2 (daemon; block 14 too) · 0x29 ×2 ·
+0x26 · 0x60 · **0x31 ×1 (4)** · 0x12 (op 0x0C) · 0x61.
+- Zombie behaviour 14 `FUN_00446290`: walk (set[2|3], random start, blend 5) for record +4 frames (+0x1334), save the
+  spot (+0x13dc), → 1. Ported.
+- Zombie behaviour 33 `FUN_00448310` (skeleton 19, kind 7, flag 0x20000; blocks 3, 4, 8): the thrower — a delay from
+  record +4 / +8 by which hand still holds an item (part model slots +0x4e0 / +0x690), idle, take the attack slot
+  (FUN_00444e90), throw motion (attack row, blend 4), at the row's frame `FUN_00449980(obj, part)` launches the held
+  item as a projectile object (task `FUN_00449d20`, which gets its own word box), `FUN_00448be0`; then 1 (kind ≠ 7) or
+  again. Not ported yet.

@@ -9,7 +9,8 @@
  * slot is free take it → 3; too close → 4), 3 `FUN_00444ac0` (pick an attack, walk in, swing, hit on the row's
  * frame) and 4 `FUN_00444ce0` (back off past the near band, free the slot → 2). Others hold still.
  * Behaviours 13 `FUN_00446080` (lie frozen with no word box — flags 0x4100 — until a camera time, get up with 0x411,
- * then 15 or 1) and 15 `FUN_00446350` (walk a set distance, then 1).
+ * then 15 or 1), 14 `FUN_00446290` (walk for a number of frames, then 1) and 15 `FUN_00446350` (walk a set
+ * distance, then 1). Not ported: 33 `FUN_00448310` (throw a held item: a projectile with its own word box).
  * Typed letters (FUN_004b32f0 → FUN_00442f30): each correct letter hits a body part (FUN_004b3a60) and shows the
  * impact effect (FUN_004430d0 → FUN_00411bc0 / FUN_00411ae0); the finished word kills: behaviour 6
  * `FUN_00443d70` (death motion by direction, FUN_00445320; attack slot freed) → 7 `FUN_00443f70` (sinks 0.04 a
@@ -230,6 +231,7 @@ export class Zombie implements GameObject, WordOwner {
     else if (this.behaviour === 4) this.backOff(w);
     else if (this.behaviour === 13) this.riseUp(w);
     else if (this.behaviour === 15) this.walkDistanceThenApproach(w);
+    else if (this.behaviour === 14) this.walkFrames(w);
     else if (this.behaviour === 6) this.die(w);
     else if (this.behaviour === 7) this.sink();
     for (let k = 0; k < 3; k++) this.place.pos[k] = f32(this.place.pos[k]! + this.vel[k]!);
@@ -429,6 +431,23 @@ export class Zombie implements GameObject, WordOwner {
         this.behaviour = 1;
         this.state = 0;
       }
+    }
+  }
+
+  /** Behaviour 14 (FUN_00446290): walk for i32(+4) frames, remember the spot, then approach (1). */
+  private walkFrames(w: World) {
+    const set = w.motionSet(this.skeleton, this.kind);
+    if (this.state === 0) {
+      this.sinkTimer = this.i32(4); // obj +0x1334 (shared with behaviour 7's timer)
+      this.state = 1;
+    }
+    const m = set ? set[2 + ((this.flags >>> 27) & 1)]! : this.rig.motion;
+    const start = w.rand();
+    this.setMotion(m, start % w.motions.frames(m), 5);
+    if (--this.sinkTimer < 1) {
+      this.spot = [...this.place.pos];
+      this.behaviour = 1;
+      this.state = 0;
     }
   }
 

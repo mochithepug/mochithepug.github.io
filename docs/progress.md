@@ -402,3 +402,10 @@ moves on and the two others get up and come at you, as in the original.
 times 265 / 304 during moving fight 6, the stage moves on); a typing bot through blocks 0–2; PLAY with an in-page
 bot: one zombie + one box, then the two risen zombies with their boxes, then path 53.
 **Not yet:** the fight camera turning towards the enemies, the camera's return blend, mode 0x60 camera lists.
+
+### 10b (part 4) — Survey of Stage 1's objects; zombie behaviour 14 (2026-11-23)
+Event op names fixed where the exe confirms them (wait_camera_time, wait_enemies_alive / _fighting, fight_over,
+camera_release, attack_counts, stage_area_load, stop_voice_if_skipping). Survey of every spawn in Stage 1: typed
+enemies are zombies (0x30), single-letter objects 0x10 / 0x11 (spawned by op 0x0C) and one 0x31; type 0x20 has no
+words. Zombie behaviour 14 (walk N frames, then approach) ported — checked in block 3. Next: the thrower (behaviour
+33 + projectiles), op 0x0C objects, placed props in PLAY.
