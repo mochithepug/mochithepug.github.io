@@ -3,6 +3,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import {
   CameraFile,
+  cameraFromSample,
   EventFile,
   EventPlayer,
   EVT_COM_BASE,
@@ -11,21 +12,25 @@ import {
   pathLength,
   PeImage,
   readBlockRules,
+  readApproachBands,
   readCameraSlots,
+  readMotionSet,
   readCharacterTypes,
   readSkins,
   readDialogue,
   readMotionTable,
   STAGE_EVENT_FILES,
 } from '@ttotd/formats';
-import { createObject, type GameObject, type MotionLib, type World } from '../src/index.ts';
+import { createObject, CrtRand, type GameObject, type MotionLib, type World } from '../src/index.ts';
 
-export function loadScene(dir: string, stage = 1, block = 0) {
+export function loadScene(dir: string, stage = 1, block = 0, holdFrames = 60) {
   const pe = new PeImage(new Uint8Array(readFileSync(join(dir, 'Tod_e.exe'))));
   const ef = new EventFile(new Uint8Array(readFileSync(join(dir, 'evt', STAGE_EVENT_FILES[stage - 1]!))));
   const common = new EventFile(new Uint8Array(readFileSync(join(dir, 'evt', 'comevtbl.bin'))), EVT_COM_BASE);
   const slot = readCameraSlots(pe).find((s) => s.file === `op_st${stage}.bin`)!;
   const op = new CameraFile(new Uint8Array(readFileSync(join(dir, 'cam', slot.file))), slot.ids.length);
+  const camSlot = readCameraSlots(pe).find((s) => s.file === `cp_st${stage}.bin`)!;
+  const cam = new CameraFile(new Uint8Array(readFileSync(join(dir, 'cam', camSlot.file))), camSlot.ids.length);
   const infos = readMotionTable(pe);
   const byId = new Map(infos.map((m) => [m.id, m]));
   const cache = new Map<string, Motion | null>();
@@ -41,7 +46,9 @@ export function loadScene(dir: string, stage = 1, block = 0) {
       return cache.get(key) ?? undefined;
     },
   };
-  const player = new EventPlayer(ef, { rules: readBlockRules(pe, stage - 1), dialogue: (id) => readDialogue(pe, id, 0), common, followBlocks: false, holdFrames: 60 });
+  const player = new EventPlayer(ef, { rules: readBlockRules(pe, stage - 1), dialogue: (id) => readDialogue(pe, id, 0), common, followBlocks: false, holdFrames });
+  player.bands = readApproachBands(pe);
+  const rng = new CrtRand();
   const world: World = {
     camPath: -1,
     camTime: 0,
@@ -57,6 +64,10 @@ export function loadScene(dir: string, stage = 1, block = 0) {
     skeletons: readCharacterTypes(pe),
     skins: readSkins(pe),
     motions,
+    eye: [0, 0, 0],
+    bands: player.bands,
+    motionSet: (sk, kind) => readMotionSet(pe, sk, kind),
+    rand: () => rng.next(),
   };
   const objects: { obj: GameObject; type: number }[] = [];
   let spawned = 0;
@@ -71,6 +82,8 @@ export function loadScene(dir: string, stage = 1, block = 0) {
       player.step();
       world.camPath = player.shot?.pathId ?? -1;
       world.camTime = player.timer;
+      const k = player.shot ? camSlot.ids.indexOf(player.shot.pathId) : -1;
+      if (k >= 0) world.eye = cameraFromSample(cam.sample(k, player.shot!.t)).eye;
       for (; spawned < player.spawns.length; spawned++) {
         const rec = player.spawns[spawned]!;
         const obj = createObject(rec, world);

@@ -24,6 +24,8 @@ import {
   readCameraSlots,
   readCharacterTypes,
   readSkins,
+  readApproachBands,
+  readMotionSet,
   readSkyTable,
   readStageAreas,
   type StageAreas,
@@ -33,7 +35,7 @@ import {
   type Mat4,
   type PolModel,
 } from '@ttotd/formats';
-import { createObject, OPENING_CAR_MODELS, Sky, TitleCard, type GameObject, type MotionLib, type World } from '@ttotd/engine';
+import { createObject, CrtRand, OPENING_CAR_MODELS, Sky, TitleCard, type GameObject, type MotionLib, type World } from '@ttotd/engine';
 import { Assets } from './assets';
 import type { GameFS } from './ingest/gamefs';
 import { patchedModel } from './gl/patch';
@@ -42,7 +44,7 @@ import { Renderer, translucentDepth, type GpuModel, type TextureSource } from '.
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 
 /** Frames a fight is held until gameplay is ported. */
-const FIGHT_HOLD = 180;
+const FIGHT_HOLD = 600;
 /** Cut-scene letterbox bar height in 640×480 pixels (provisional, as in the Stage view). */
 const CINE_BAR = 60;
 /**
@@ -154,6 +156,8 @@ export async function startGame(fs: GameFS, stage = 1, at = 0) {
   await loadSkipSign(a);
   await loadTitle(a, stage);
   if (my !== token) return;
+  player.bands = readApproachBands(a.pe);
+  const rng = new CrtRand();
   const world: World = {
     camPath: -1,
     camTime: 0,
@@ -169,6 +173,10 @@ export async function startGame(fs: GameFS, stage = 1, at = 0) {
     skeletons: readCharacterTypes(a.pe),
     skins: readSkins(a.pe),
     motions: assets.motions,
+    eye: [0, 0, 0],
+    bands: player.bands,
+    motionSet: (sk, kind) => readMotionSet(a.pe, sk, kind),
+    rand: () => rng.next(),
   };
   player.start(0);
   game = { stage, areas, sky: new Sky(readSkyTable(a.pe)), camFile, camIds: slot.ids, player, world, objects: [], spawned: 0, acc: 0, last: performance.now(), enter: false, bars: 0 };
@@ -251,7 +259,10 @@ function stepObjects(g: Game, enter: boolean) {
   const p = g.player, w = g.world;
   g.bars = Math.min(1, Math.max(0, g.bars + (p.skippable ? 1 : -1) / CINE_SLIDE));
   updateCamera(g);
-  if (g.view) g.sky.update(p.skyRow, p.skyMode, g.view.eye);
+  if (g.view) {
+    g.sky.update(p.skyRow, p.skyMode, g.view.eye);
+    w.eye = g.view.eye;
+  }
   w.camPath = p.shot?.pathId ?? -1;
   w.camTime = p.timer;
   w.enter = enter;

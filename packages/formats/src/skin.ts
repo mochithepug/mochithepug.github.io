@@ -43,10 +43,13 @@ export interface SkinPiece {
 }
 
 function drawGroups(fn: number): number[] | undefined {
-  if (fn === 0x490280) return [0];
+  // 0x490280 and 0x490290 (zskamere's belly) are identical: FUN_00490240(piece, 1)
+  if (fn === 0x490280 || fn === 0x490290) return [0];
   if (fn === 0x490230) return [2];
   if (fn === 0x48fca0) return [0, 1, 2, 3];
-  return undefined; // none or a skeleton-specific function (e.g. skeleton 0x17), not ported
+  // 0x490410 = zskamere piece 1, a chain of 8 models set up by FUN_004902a0 only when DAT_00a39f80 == 4 (a
+  // special mode; skipped in normal play) — not ported. No function (skeletons 0x1f, 0x46, 0x4e): never drawn.
+  return undefined;
 }
 
 /** Skin pieces of every skeleton (index = skeleton). */

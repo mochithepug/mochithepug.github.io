@@ -1,6 +1,6 @@
 /** Ported objects in Stage 1 against the user's install (skipped unless TTOTD_DIR is set). */
 import { describe, expect, it } from 'vitest';
-import { blendAngles, Daemon, OpeningCar, OPENING_CAR_MODELS, TitleCard, Zombie } from '../src/index.ts';
+import { blendAngles, Daemon, heading, OpeningCar, OPENING_CAR_MODELS, TitleCard, turnTowards, Zombie } from '../src/index.ts';
 import { loadScene } from './scene.ts';
 
 const dir = process.env.TTOTD_DIR;
@@ -27,6 +27,15 @@ describe('rotation blend (FUN_00476550)', () => {
     expect(close(blendAngles(a, b, 0), a)).toBe(true);
     expect(close(blendAngles(a, b, 1), b)).toBe(true);
     expect(close(blendAngles([0, 0, 0], [0, 0x2000, 0], 0.5), [0, 0x1000, 0])).toBe(true);
+  });
+});
+
+describe('turning (FUN_004371d0)', () => {
+  it('steps towards the target the short way, and lands on it when close', () => {
+    expect(turnTowards(0x1000, 0x2000, 0x100)).toBe(0x1100);
+    expect(turnTowards(0x2000, 0x1000, 0x100)).toBe(0x1f00);
+    expect(turnTowards(0xff00, 0x0100, 0x100)).toBe(0x10000); // across 0: up, not all the way round
+    expect(turnTowards(0x1000, 0x1050, 0x100)).toBe(0x1050);
   });
 });
 
@@ -75,9 +84,14 @@ describe.skipIf(!dir)('Stage 1 opening with the ported objects (real data)', () 
     expect(daemon[daemon.length - 1]!.dead).toBe(true);
   });
 
-  it('the first wave: three znsam2 zombies (one-player list), idle motions, feet on the ground', () => {
-    const { s } = run(60 * 30);
-    const zombies = s.objects.map((o) => o.obj).filter((o): o is Zombie => o instanceof Zombie);
+  it('the first wave: three znsam2 zombies (one-player list), waiting motions, feet on the ground', () => {
+    const s = loadScene(dir!, 1, 0);
+    let zombies: Zombie[] = [];
+    for (let f = 0; f < 60 * 30 && zombies.length === 0; f++) {
+      s.step();
+      zombies = s.objects.map((o) => o.obj).filter((o): o is Zombie => o instanceof Zombie);
+    }
+    for (let f = 0; f < 10; f++) s.step();
     expect(zombies.length).toBe(3);
     expect(zombies.map((z) => z.skeleton)).toEqual([7, 7, 7]);
     expect(zombies.map((z) => z.rig.motion).sort()).toEqual([1052, 1053, 1064]);
@@ -86,6 +100,28 @@ describe.skipIf(!dir)('Stage 1 opening with the ported objects (real data)', () 
       expect(Math.abs(feet - z.place.pos[1])).toBeLessThan(1.5);
       expect(z.draw().length).toBe(16); // 15 parts + the belly skin
       expect(z.draw()[15]!.patch!.length).toBe(8);
+    }
+  });
+
+  it('the first wave walks up to the player (behaviour 1, walk 0x437) and stands at the near band facing them', () => {
+    const s = loadScene(dir!, 1, 0, 60 * 30);
+    const seen = new Set<number>();
+    let zombies: Zombie[] = [];
+    for (let f = 0; f < 60 * 45; f++) {
+      s.step();
+      zombies = s.objects.map((o) => o.obj).filter((o): o is Zombie => o instanceof Zombie);
+      for (const z of zombies) if (z.behaviour === 1) seen.add(z.rig.motion);
+    }
+    expect(seen.has(0x437)).toBe(true); // (the waiting motion is still reported while blending out)
+    const e = s.world.eye;
+    for (const z of zombies) {
+      expect(z.behaviour).toBe(2);
+      expect(z.rig.motion).toBe(0x408); // idle of znsam2's set
+      const d = Math.hypot(z.place.pos[0] - e[0], z.place.pos[2] - e[2]);
+      expect(d).toBeGreaterThan(24);
+      expect(d).toBeLessThan(27); // near band 25
+      const off = (heading(z.place.pos[0] - e[0], z.place.pos[2] - e[2]) - z.place.angles[1]) & 0xffff;
+      expect(Math.min(off, 0x10000 - off)).toBeLessThan(0x400); // facing the player (within ~6°)
     }
   });
 });

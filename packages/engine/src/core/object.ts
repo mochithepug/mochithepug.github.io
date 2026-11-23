@@ -51,6 +51,14 @@ export interface World {
   /** Skin pieces by skeleton (readSkins). */
   skins: SkinPiece[][];
   motions: MotionLib;
+  /** The player's position (DAT_00a396a0 ← DAT_00a149e0): the game camera's eye. */
+  eye: [number, number, number];
+  /** Approach bands (DAT_00a11880): per row near / mid / far distance from the player. */
+  bands: number[][];
+  /** Motion set of a skeleton's kind (@005a2330): [0] idle, [2] walk, [3] fast walk, [4] back off. */
+  motionSet(skeleton: number, kind: number): number[] | undefined;
+  /** crt_rand. */
+  rand(): number;
 }
 
 export interface GameObject {

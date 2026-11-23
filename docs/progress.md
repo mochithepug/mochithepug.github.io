@@ -324,3 +324,15 @@ now shows through the puddles: upside-down bridge, railing and lamp, as in the u
 black like the exe (found the D3DX clear colour, set once to 0,0,0) instead of the fog colour — the title card is
 now on black; the letterbox bars slide out (and in) over 20 frames — provisional, the exe's bar code is still not
 found (searched paths listed in the notes). Screenshots: frames 225 (bars in), 240 (sliding out), 330 (title card).
+
+### 10b (part 2) — Zombies walk up to the player (2026-11-23) ✅ verified by user 2026-11-23
+**Delivered:** zombie behaviour 1 (walk towards the player — the camera eye — turning at the exe's rate, using
+the skeleton's walk motion from the exe's motion sets; stops at the near band, 25) and behaviour 2 (idle motion,
+keeps facing the player); approach bands (exe defaults + event op 0x0E), the game's rand (MSVC LCG). PLAY holds a
+fight for 10 s (was 3) so the approach can be seen.
+**Verified:** tests — turning steps the short way; the first wave walks with 0x437 and ends in behaviour 2 at
+24–27 from the player, facing them; real-time screenshots: walking towards the camera, then standing close.
+**Not yet:** the attack (3), backing off (4), damage, sounds; `at=N` can show characters missing (motions that
+load after the freeze are never posed).
+**Fix (user: zskamere missing its belly in the Characters tab):** its belly piece's draw function (0x490290) is
+a second copy of the standard one and was skipped; now recognised (test: skeleton 0x17 → model 0x2378, group A0).

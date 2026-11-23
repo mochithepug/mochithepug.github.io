@@ -41,7 +41,7 @@ export const EVT_TERMINATORS = new Set([0x4f, 0x4e, 0x71]);
 
 /** Names for the commands identified so far (others print as op_XX). */
 export const EVT_OP_NAMES: Record<number, string> = {
-  0x03: 'spawn_1p', 0x07: 'spawn_2p', 0x09: 'spawn', 0x0a: 'spawn_b', 0x0b: 'spawn_obj', 0x0e: 'set_slot_xyz', 0x20: 'light_fog', 0x24: 'light_fog_b', 0x21: 'param_c',
+  0x03: 'spawn_1p', 0x07: 'spawn_2p', 0x09: 'spawn', 0x0a: 'spawn_b', 0x0b: 'spawn_obj', 0x0e: 'approach_band', 0x20: 'light_fog', 0x24: 'light_fog_b', 0x21: 'param_c',
   0x25: 'param_d', 0x23: 'light_fog_fade', 0x27: 'param_f', 0x2c: 'skippable', 0x2d: 'say', 0x30: 'camera', 0x41: 'wait_frame',
   0x42: 'wait_frames', 0x45: 'wait_flag', 0x29: 'stage_area', 0x1b: 'sky_row', 0x1c: 'sky_mode', 0x40: 'wait_camera', 0x38: 'sound', 0x3a: 'sound_b', 0x39: 'sound_repeat', 0x3b: 'sound_repeat_b', 0x18: 'light_dir', 0x19: 'light_dir_b', 0x61: 'screen_mode', 0x49: 'by_players_a', 0x4a: 'by_players_b', 0x4b: 'by_players_c', 0x4d: 'segment_start',
   0x4e: 'halt', 0x4f: 'next_script', 0x6c: 'camera_1p', 0x6d: 'camera_2p', 0x71: 'return', 0x72: 'spawn_c',

@@ -1,6 +1,7 @@
 export * from './core/object.ts';
 export * from './core/angles.ts';
 export * from './core/rig.ts';
+export * from './core/rand.ts';
 export * from './objects/t22-daemon.ts';
 export * from './objects/t26-opencar.ts';
 export * from './objects/t30-zombie.ts';

@@ -235,3 +235,14 @@
 004bf3e0	fn	frame_end	model_draw_deferred + EndScene
 004bdb00	fn	color_to_d3d	float RGBA (ECX) → D3DCOLOR
 008491e0	data	g_d3dx_context	ID3DXContext (+0x14 device, +0x54 Clear, +0x58 SetClearColor)
+00444520	fn	zombie_b1_approach	walk to the player, turn; near band → 2
+00444770	fn	zombie_b2_stand	idle facing the player; attack slot → 3; too close → 4
+00444ac0	fn	zombie_b3_attack	attack the player
+00444ce0	fn	zombie_b4_back_off	step back to the saved spot
+00445750	fn	zombie_band	ground distance to the player vs approach bands → 1..4
+004371d0	fn	turn_towards	step an angle towards a target by at most N, short way
+004372a0	fn	zombie_turn_to_player	turn towards a point 1.5 ahead of the player
+00437250	fn	turn_to_player	turn towards the player position
+00420430	fn	evt_op_band	op 0x0E: set an approach band row
+004dec80	data	g_band_defaults	approach bands, 4 rows × near/mid/far
+005a2330	data	g_motion_sets	[skeleton][kind] → motions: idle, ?, walk, fast walk, back off, ?

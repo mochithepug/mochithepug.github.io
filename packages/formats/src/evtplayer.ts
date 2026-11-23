@@ -87,6 +87,11 @@ export class EventPlayer {
   skippable = false;
   /** Flag bytes DAT_00a396c0[N] that op 0x45 waits for; set by game objects (248: title card over). */
   readonly flags = new Uint8Array(0x400);
+  /**
+   * Approach bands (DAT_00a11880, rows of near/mid/far): the owner fills them with the exe's defaults at stage
+   * start (readApproachBands); op 0x0E changes a row.
+   */
+  bands: number[][] = [];
   /** Stage area to draw (DAT_00a11124, op 0x29). */
   area = 0;
   /** Sky row (DAT_00a118d4, op 0x1b) and mode (DAT_00a3e764, op 0x1c: 0 off, 1 turning, 2 still). */
@@ -303,6 +308,14 @@ export class EventPlayer {
           this.add('light', `light direction pitch ${w(1)} yaw ${w(2)}`);
           advance();
           break;
+        case 0x0e: {
+          // FUN_00420430: row, then near / mid / far as floats
+          const fl = (k: number) => new Float32Array(new Uint32Array([w(k)]).buffer)[0]!;
+          this.bands[w(1)] = [fl(2), fl(3), fl(4)];
+          this.add('other', `approach band ${w(1)} = ${this.bands[w(1)]!.map((v) => v.toFixed(1)).join(' / ')}`);
+          advance();
+          break;
+        }
         case 0x29:
           this.area = (w(1) << 16) >> 16;
           this.add('other', `stage area ${this.area}`);

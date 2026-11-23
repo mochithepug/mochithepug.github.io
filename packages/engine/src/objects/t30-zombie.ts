@@ -3,16 +3,36 @@
  * (obj +0x1394 → record +0x24) gives skeleton, kind, behaviour and each behaviour's parameters.
  * Per frame: behaviour @005a215c[obj +0x1314], position += velocity, pose + draw (FUN_004438b0), then the
  * motion counter advances unless frozen (obj +0x34 & 0x4000).
- * Behaviours ported: 18 `FUN_00446700` (play a motion, wait for a camera time, then the next behaviour) and
- * 26 `FUN_00447380` (wait, leap along an arc to a target, land). Others (e.g. 1, the attack) hold still.
- * Not ported: being hit, attacks, word box, head turning to the player (FUN_00442c60), special part models
- * (FUN_00442510), sounds.
+ * Behaviours ported: 18 `FUN_00446700` (play a motion, wait for a camera time, then the next behaviour),
+ * 26 `FUN_00447380` (wait, leap along an arc to a target, land), 1 `FUN_00444520` (walk to the player, turning
+ * towards them; within the near band → 2) and 2 `FUN_00444770` (stand facing the player). Others hold still.
+ * Not ported: the attack decision in 2 (FUN_00444e90 → 3 attack, FUN_00444ac0) and backing off (4,
+ * FUN_00444ce0), being hit, word box, head turning to the player (FUN_00442c60), special part models
+ * (FUN_00442510), groans and other sounds.
  */
-import type { SpawnRecord } from '@ttotd/formats';
+import { transformDir, type SpawnRecord } from '@ttotd/formats';
+import { rotationMatrix, toAngle } from '../core/angles.ts';
 import type { DrawItem, GameObject, World } from '../core/object.ts';
 import { CharacterRig, type Placement } from '../core/rig.ts';
 
 type Vec3 = [number, number, number];
+
+/** FUN_004371d0: turn angle `cur` towards `target` by at most `step` (Sega units), the short way round. */
+export function turnTowards(cur: number, target: number, step: number): number {
+  const a = cur & 0xffff, b = target & 0xffff;
+  const d = a - b;
+  const abs = d < 0 ? b - a : d;
+  let up = b - a + 0x10000;
+  if (up < 0) up = d - 0x10000;
+  let down = d + 0x10000;
+  if (down < 0) down = b - a - 0x10000;
+  if (abs <= step || up <= step || down <= step) return b;
+  if (a < b) return down < abs ? a - step : a + step;
+  return abs <= up ? a - step : a + step;
+}
+
+/** FUN_0040bd10's heading: Sega angle of direction (dx, dz) on the ground. */
+export const heading = (dx: number, dz: number) => toAngle(Math.atan2(dx, dz));
 
 const view = (b: Uint8Array | undefined) => (b ? new DataView(b.buffer, b.byteOffset, b.byteLength) : undefined);
 const f32 = Math.fround;
@@ -62,10 +82,67 @@ export class Zombie implements GameObject {
   update(w: World) {
     if (this.behaviour === 18) this.waitFor(w);
     else if (this.behaviour === 26) this.leap(w);
+    else if (this.behaviour === 1) this.approach(w);
+    else if (this.behaviour === 2) this.stand(w);
     for (let k = 0; k < 3; k++) this.place.pos[k] = f32(this.place.pos[k]! + this.vel[k]!);
     this.rig.pose(this.place);
     this.items = this.rig.draw();
     if (!(this.flags & 0x4000)) this.rig.counter++;
+  }
+
+  /** Approach band row (obj +0x1323, set in FUN_00441d80). */
+  private get bandRow() {
+    return this.skeleton === 0 ? 2 : 0;
+  }
+
+  /** Ground distance to the player. */
+  private playerDistance(w: World) {
+    const dz = this.place.pos[2] - w.eye[2], dx = this.place.pos[0] - w.eye[0];
+    return f32(Math.sqrt(dz * dz + dx * dx));
+  }
+
+  /** FUN_00445750: 1 within near, 2 near–mid, 3 mid–far, 4 beyond far. */
+  private band(w: World): number {
+    const d = this.playerDistance(w), [near, mid, far] = w.bands[this.bandRow] ?? [25, 38, 51];
+    if (d <= near!) return 1;
+    if (d <= mid!) return 2;
+    if (d <= far!) return 3;
+    return 4;
+  }
+
+  /** FUN_00443860: switch to a motion (blended) if not already playing it. */
+  private setMotion(id: number, start: number, blend: number) {
+    if (this.rig.motion !== id) this.rig.blendTo(id, start, blend);
+  }
+
+  /** Behaviour 1 (FUN_00444520): walk towards the player, turning; within the near band → behaviour 2. */
+  private approach(w: World) {
+    const set = w.motionSet(this.skeleton, this.kind);
+    const fast = (this.flags >>> 27) & 1;
+    const start = w.rand();
+    if (set) this.setMotion(set[2 + fast]!, start % w.motions.frames(set[2 + fast]!), 10);
+    w.rand(); // groan chance (FUN_0044d1b0) — sound not ported
+    if (this.band(w) === 1) {
+      this.behaviour = 2;
+      this.state = 0;
+      return;
+    }
+    // FUN_004372a0: aim at a point 1.5 ahead of the player (turned by the player's y coordinate, as the exe does)
+    const e = w.eye;
+    const off = transformDir(rotationMatrix([0, Math.trunc(e[1]), 0]), [0, 0, 1.5]);
+    const target = heading(this.place.pos[0] - (e[0] + off[0]!), this.place.pos[2] - (e[2] + off[2]!));
+    this.place.angles[1] = turnTowards(this.place.angles[1], target, Math.trunc((fast * 1.5 + 1) * 416));
+    // bands 2–4 with obj +0x135c <= +0x1321 (−1) would switch to behaviour 5; kind 8 may switch to 0x21 — neither
+    // happens for these zombies.
+  }
+
+  /** Behaviour 2 (FUN_00444770) without the attack decision: idle motion, face the player. */
+  private stand(w: World) {
+    const set = w.motionSet(this.skeleton, this.kind);
+    // The exe backs off (behaviour 4) when closer than near − 1; not ported — stands instead.
+    if (set && this.rig.motion !== set[0]) this.rig.blendTo(set[0]!, w.rand() % 5, 10); // + voice 0x1917a9
+    const target = heading(this.place.pos[0] - w.eye[0], this.place.pos[2] - w.eye[2]);
+    this.place.angles[1] = turnTowards(this.place.angles[1], target, 0x40); // FUN_00437250
   }
 
   /** Behaviour 18 (FUN_00446700). */

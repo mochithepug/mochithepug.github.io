@@ -18,3 +18,4 @@ export * from './events.ts';
 export * from './evtplayer.ts';
 export * from './skin.ts';
 export * from './stagedraw.ts';
+export * from './enemy.ts';

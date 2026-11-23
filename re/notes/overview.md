@@ -590,6 +590,10 @@ Game objects animate through a motion state at obj +0x198 (`FUN_004742a0` set-up
 Found from the user's report that znsam2's belly showed the background (the original: solid skin to the belt).
 Characters have extra **skin models** whose vertices follow two joints, filling the joins between rigid parts;
 84 pieces on 64 skeletons (znsam2: the belly, model 0x2298 = znsam2 #2; the daemon: its waist; the wings: two).
+  zskamere (skeleton 0x17, user report): piece 0 = the belly (0x2378 = zskamere #2) uses draw function 0x490290,
+  identical to 0x490280 (FUN_00490240(piece, 1) → group A0) — was skipped as "unknown". Piece 1 is a chain of 8
+  models (FUN_004902a0 → FUN_00490410: each segment's vertices from the previous one's) set up only when
+  DAT_00a39f80 == 4; not ported. Skeletons 0x1f / 0x46 / 0x4e list no draw function (never drawn).
 - `FUN_004742a0` reads @0055ac90[skeleton] → {count, piece*[]}; `FUN_00475030` after the joints loops the pieces:
   `FUN_0048f910` (once) copies the piece and the joint numbers (@0051916c + piece·0x14: A0, A1, B0, B1, reference;
   other tables for skeletons 0x0e, 0x1f/0x46/0x4e, 0x41, 0x4c, 0x53) and relocates the skin data
@@ -626,3 +630,27 @@ Characters have extra **skin models** whose vertices follow two joints, filling 
   `FUN_004c12c0`). Drawing opaque + translucent model by model hides the reflection behind the puddles' depth.
   Port: `Renderer.draw({ pass })` + `translucentDepth` in the game screen (priority not ported: all 8 so far). Rows 8/10/11 have their own placement (not ported).
 - Ops 0x1d (DAT_00a3b804), 0x1e (DAT_00a3b438), 0x1f (DAT_00a3e7b4) set other display globals (not traced yet).
+
+## Zombie behaviours (type 0x30; behaviour table @005a215c[obj +0x1314], state +0x1316)
+
+- **1 `FUN_00444520` approach**: each frame two crt_rand; motion = set[2 + bit 27 of obj +0x34] (walk / fast
+  walk; set = @005a2330[skeleton][kind = obj +0x1310]) blended in over 10 frames from a random frame (FUN_00443860);
+  band = `FUN_00445750` (ground distance to the player DAT_00a396a0/a8 against row obj +0x1323 of DAT_00a11880:
+  1 ≤ near < 2 ≤ mid < 3 ≤ far < 4; also sets +0x135c from DAT_00a3b7f0..f8). Band 1 → behaviour 2. Else turn
+  (`FUN_004372a0`) towards the player + rotY(ftol(player y))·(0, 0, 1.5) at (1 + 1.5·bit27)·416 per frame
+  (`FUN_004371d0` short-way step). Bands 2–4 with +0x135c ≤ (char)+0x1321 → behaviour 5; kind 8 → 0x21
+  (FUN_00447ff0). Walking itself is the walk motion's root motion.
+- **2 `FUN_00444770` stand**: if skeleton ≠ 0, no flag 0x40400 and closer than near − 1 → behaviour 4 (back off).
+  Else, when allowed (no flag 0x400, +0x135c > +0x1321, +0x1322 < 3, timer +0x1340 < 1), `FUN_00444e90` asks for
+  the player's attack slot (DAT_00a11840[player], one attacker each; obj +0x121 = target player) → behaviour 3
+  (kind 4 → 0x34). Otherwise idle set[0] (random start 0–4, voice 0x1917a9) and turn to the player by 0x40
+  (`FUN_00437250`). Skeleton 1 / 0x13 / 0x14 first pick a set by which arm parts remain (FUN_00444970).
+- **3 `FUN_00444ac0` attack**: attack row from @005a2434 / @005a258c per skeleton & set (random of 10 by
+  damage state +0x131c & 7); walks to the attack point (+0x13e8), plays the attack, hits at a frame
+  (FUN_00445590), then → 4. **4 `FUN_00444ce0` back off**: set[4] motion, moves to the saved spot +0x13dc for up to
+  0xF0 frames / until past near, → 2. (3 and 4 not ported yet.)
+- Bands: defaults @004dec80 copied at stage start (`FUN_0044eab0`), row 0 = 25 / 38 / 51; event **op 0x0E**
+  (`FUN_00420430`) sets a row (Stage 1 does not use it). Set-up `FUN_00441d80`: +0x1310 = record kind, +0x1323 = 2
+  for skeleton 0 else 0, +0x1321 = −1, motion 0x3f5 (0x457 for kind 4).
+- Player position DAT_00a396a0 ← DAT_00a149e0 = the camera eye (FUN_0040d5b0 samples the camera path, blended
+  (1·new + 15·old)/16 only during camera transitions, FUN_0040c4c0).

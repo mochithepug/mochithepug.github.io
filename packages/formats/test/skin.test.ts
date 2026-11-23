@@ -23,6 +23,12 @@ describe.skipIf(!dir)('skin pieces (real data)', () => {
     expect(Array.from(belly!.groups[0]!.slotEntry).filter((e) => e >= 0).length).toBe(8);
   });
 
+  it('zskamere (skeleton 0x17) has its belly piece (draw function 0x490290 = the standard A0 one), model 0x2378', () => {
+    const pieces = skins[0x17]!;
+    expect(pieces.map((p) => p.model)).toEqual([0x2378]);
+    expect(pieces[0]!.apply).toEqual([0]);
+  });
+
   it('every slot of every skin piece writes vertex records that exist in its model', () => {
     let checked = 0;
     for (const pieces of skins) for (const p of pieces) {
