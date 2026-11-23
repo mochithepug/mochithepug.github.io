@@ -23,3 +23,30 @@ describe.skipIf(!dir)('stage areas & sky (real data)', () => {
     for (const r of [rows[4]!, rows[5]!]) expect([r.model, r.layer, r.height, r.spin]).toEqual([0x1854, 0x1e44, 0, 4]);
   });
 });
+
+import { readBuiltinWords, readWordFlags, readWordLevelTables, wordFileName, wordLevel } from '../src/words.ts';
+
+describe.skipIf(!dir)('words for fights (real data)', () => {
+  const pe = new PeImage(new Uint8Array(readFileSync(join(dir!, 'Tod_e.exe'))));
+  const t = readWordLevelTables(pe);
+
+  it('category 1 = the 41 built-in two-character words (Me, U2 … as in the original library fight)', () => {
+    const w = readBuiltinWords(pe, 1).map((e) => e.text);
+    expect(w.length).toBe(41);
+    expect(w).toContain('Me');
+    expect(w).toContain('U2');
+    expect(readBuiltinWords(pe, 0).map((e) => e.text).join('')).toBe('ABCDEFGHIJKLMNOPQRSTUVWXYZ');
+  });
+
+  it('word level (FUN_004b16b0): Stage 1 budgets at rank 1 → category 1 for 25 / 50, files for 100 / 150', () => {
+    expect([25, 50, 100, 150].map((b) => wordLevel(t, b, 1))).toEqual([0, 0, 5, 10]);
+    expect([25, 50, 100, 150].map((b) => wordLevel(t, b, 5))).toEqual([0, 5, 10, 15]);
+    expect(wordFileName(pe, 0, 5)).toBe('Z000L050.bin');
+    expect(wordFileName(pe, 0, 20)).toBe('Z000L200.bin');
+    expect(wordFileName(pe, 0, 21)).toBeUndefined();
+  });
+
+  it('word flags per type (@005a2848): zombies 1, daemon 0x4000804, props none', () => {
+    expect([0x30, 0x22, 0x41, 0x20].map((ty) => readWordFlags(pe, ty))).toEqual([1, 0x4000804, 0, 0]);
+  });
+});

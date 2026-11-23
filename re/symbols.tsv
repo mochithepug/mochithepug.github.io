@@ -246,3 +246,31 @@
 00420430	fn	evt_op_band	op 0x0E: set an approach band row
 004dec80	data	g_band_defaults	approach bands, 4 rows × near/mid/far
 005a2330	data	g_motion_sets	[skeleton][kind] → motions: idle, ?, walk, fast walk, back off, ?
+00444e90	fn	zombie_take_attack_slot	claim a player's attack slot (DAT_00a11840) → target +0x121
+00445620	fn	zombie_release_attack_slot	free the attack slot / off-screen lock
+00445000	fn	zombie_aim	face the player; attack point +0x13e8
+00445590	fn	zombie_hit	on the hit frame: FUN_004846d0(player, hit, damage)
+00437360	fn	turn_to_point	turn towards (x, z) by step
+00436fa0	fn	obj_on_screen	view-space bounds check
+005a2434	data	g_attack_picks	[skeleton][set] → 80 row picks (4-byte stride)
+005a258c	data	g_attack_rows	[skeleton][set] → 16-byte attack rows
+004b1ef0	fn	word_box_take_word	pick a word (FUN_004b1f80), width, counters
+004b19f0	fn	word_random_index	rand in [lo, hi) avoiding the last 16
+004b23a0	fn	word_claim_first_key	first key unique among 14 slots
+004b2400	fn	word_category	category from owner word flags / hp
+004b3f80	fn	word_list_entry	category list record
+004b1510	fn	word_setup	(group, budget): category / word file (op 0x61)
+004b16b0	fn	word_level	time budget × rank → level 0–19
+004b40b0	fn	word_load_group_level	load word file @005eaaac[group] + level − 1
+00437c60	fn	get_rank	rank DAT_00a3b856 capped per stage
+00451ff0	fn	rank_update	+1 every 0x708 frames, performance, clamp
+004aec20	fn	word_boxes_draw	separate overlapping boxes, draw each
+004b0c90	fn	word_box_draw	frame + word line + typing line
+004b01a0	fn	word_box_frame	nine frame models, danger colour
+004b0490	fn	word_box_piece	place one frame model (view space × 0.1)
+004affd0	fn	word_box_fit	size by depth, keep on screen
+004afd50	fn	word_box_near	move a near box to depth 10
+004afd90	fn	word_box_init_models	centre model black
+004b3bc0	fn	word_box_danger	(distance − 20)·0.025 clamped
+005a2848	data	g_type_word_flags	per object type: word box flags
+0058e410	data	g_word_time_scale	word time option × 0.1

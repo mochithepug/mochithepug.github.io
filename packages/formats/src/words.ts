@@ -130,3 +130,71 @@ export function layoutWordLine(pe: PeImage, text: string, size: number, x: numbe
   });
   return out;
 }
+
+/**
+ * Word lists built into the exe (`FUN_004b3f80` categories 0, 1, 3, 4, 5; 2 = the loaded word file): 12-byte
+ * records like the files' — i32 value (low i16 → box +0x9e, high u16 = flags → +0x9c), char* text, u8* codes.
+ */
+export function readBuiltinWords(pe: PeImage, category: number): WordEntry[] {
+  const lists: Record<number, [number, number]> = {
+    0: [0x0058f0e8, pe.u32(0x0058f928) & 0xff],
+    1: [pe.u32(0x005eaaa0), pe.u32(0x005eaaa4) & 0xff],
+    3: [0x0058f410, pe.u32(0x0058f928) >>> 24],
+    4: [0x0058f510, pe.u32(0x0058f92c) & 0xff],
+    5: [0x0058f658, (pe.u32(0x0058f92c) >>> 8) & 0xff],
+  };
+  const l = lists[category];
+  if (!l) return [];
+  const [at, n] = l;
+  return Array.from({ length: n }, (_, i) => {
+    const r = at + i * 12;
+    const codes: number[] = [];
+    for (let p = pe.u32(r + 8); pe.u8(p) !== 0 && codes.length < 64; p++) codes.push(pe.u8(p));
+    return { value: pe.i32(r), text: pe.cstr(pe.u32(r + 4)), codes: Uint8Array.from(codes) };
+  });
+}
+
+/** Word file of a group's level (`FUN_004b40b0`): names[@005eaaac[group] + level − 1]; undefined if out of range. */
+export function wordFileName(pe: PeImage, group: number, level: number): string | undefined {
+  const groups = pe.u32(0x005eaab0) & 0xffff;
+  if (group < 0 || group >= groups || level < 1) return undefined;
+  const table = pe.u32(0x005eaaac);
+  const first = pe.u16(table + group * 2), next = pe.u16(table + (group + 1) * 2);
+  if (level - 1 >= next - first) return undefined;
+  return readWordListNames(pe)[first + level - 1];
+}
+
+/** Rank-dependent tables of `FUN_004b16b0` (@005ea6c8, @005ea6d8 i8; @005ea688 f32), indexed by rank 0–15. */
+export function readWordLevelTables(pe: PeImage) {
+  const i8 = (a: number) => (pe.u8(a) << 24) >> 24;
+  return {
+    short: Array.from({ length: 16 }, (_, r) => i8(0x005ea6c8 + r)),
+    mid: Array.from({ length: 16 }, (_, r) => i8(0x005ea6d8 + r)),
+    factor: Array.from({ length: 16 }, (_, r) => pe.f32(0x005ea688 + r * 4)),
+  };
+}
+
+/**
+ * `FUN_004b16b0(budget, 0)`: word level for a time budget (event op 0x61) at `rank`. < 0 never here; 0 →
+ * category 1 (the built-in two-letter words); 1–19 → word file level. `scale` = DAT_005ea9e4 (0.1 by default),
+ * language 'A' (no ×1.2).
+ */
+export function wordLevel(t: ReturnType<typeof readWordLevelTables>, budget: number, rank: number, scale = 0.1): number {
+  const f32 = Math.fround;
+  let p = f32(f32(Math.trunc(budget)) * f32(scale));
+  if (p > 15) {
+    if (p > 30) {
+      const k = p > 240 ? 0.6 : p > 210 ? 0.7 : p > 180 ? 0.8 : p > 150 ? 0.9 : p > 120 ? 1 : p > 85 ? 1.2 : p > 65 ? 1.3 : p > 45 ? 1.4 : 1.5;
+      p = f32((f32(t.factor[rank]! * f32(k)) + 1) * p);
+    } else p = t.mid[rank]! + p;
+  } else p = t.short[rank]! + p;
+  if (p > 2000) p = 2000;
+  if (p <= 0) p = 0; // DAT_00839ca8
+  if (p < 3) return 0;
+  return Math.min(19, Math.trunc(p));
+}
+
+/** Word flags of an object type (@005a2848): non-zero → `spawn_record` gives it a word box. */
+export function readWordFlags(pe: PeImage, type: number): number {
+  return pe.u32(0x005a2848 + type * 4);
+}

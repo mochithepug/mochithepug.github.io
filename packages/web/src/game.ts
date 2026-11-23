@@ -25,7 +25,15 @@ import {
   readCharacterTypes,
   readSkins,
   readApproachBands,
+  decodeWordList,
+  invert,
+  wordFileName,
+  rotateXLocal,
+  rotateYLocal,
+  transformDir,
+  type WordEntry,
   readMotionSet,
+  readAttackTable,
   readSkyTable,
   readStageAreas,
   type StageAreas,
@@ -35,7 +43,7 @@ import {
   type Mat4,
   type PolModel,
 } from '@ttotd/formats';
-import { createObject, CrtRand, OPENING_CAR_MODELS, Sky, TitleCard, type GameObject, type MotionLib, type World } from '@ttotd/engine';
+import { createObject, CrtRand, OPENING_CAR_MODELS, Sky, TitleCard, WordBoxes, WordDeck, type GameObject, type MotionLib, type World } from '@ttotd/engine';
 import { Assets } from './assets';
 import type { GameFS } from './ingest/gamefs';
 import { patchedModel } from './gl/patch';
@@ -65,6 +73,8 @@ interface Game {
   objects: GameObject[];
   /** Spawn records already turned into objects. */
   spawned: number;
+  /** Fights already ended for the objects (EventPlayer.fightsOver). */
+  fightsOver: number;
   acc: number;
   last: number;
   enter: boolean;
@@ -72,7 +82,9 @@ interface Game {
   bars: number;
   /** Frozen on a frame (debug `at`): keep drawing, no stepping. */
   frozen?: boolean;
-  view?: { view: Mat4; eye: [number, number, number] };
+  view?: { view: Mat4; eye: [number, number, number]; game: Mat4 };
+  /** Word boxes of the enemies. */
+  boxes: WordBoxes;
 }
 
 let game: Game | undefined;
@@ -96,6 +108,9 @@ async function loadModel(a: Assets, id: number) {
 }
 
 
+/** Motion loads in flight (the debug fast-forward waits for them). */
+const pendingLoads = new Set<Promise<unknown>>();
+
 /** Motions by id, loaded from mot/ on first use (undefined until loaded; rigs hold their pose meanwhile). */
 function motionLibrary(a: Assets): MotionLib {
   const infos = new Map(readMotionTable(a.pe).map((m) => [m.id, m]));
@@ -108,9 +123,11 @@ function motionLibrary(a: Assets): MotionLib {
       cache.set(key, null);
       const info = infos.get(id);
       if (info && a.fs.has(`mot/${info.file}`)) {
-        void a.file(`mot/${info.file}`).then((file) => {
+        const load = a.file(`mot/${info.file}`).then((file) => {
           if (motionFits(file, info, joints)) cache.set(key, new Motion(file, info, joints));
         });
+        pendingLoads.add(load);
+        void load.finally(() => pendingLoads.delete(load));
       }
       return undefined;
     },
@@ -177,14 +194,37 @@ export async function startGame(fs: GameFS, stage = 1, at = 0) {
     bands: player.bands,
     motionSet: (sk, kind) => readMotionSet(a.pe, sk, kind),
     rand: () => rng.next(),
+    attackTable: (sk, set) => readAttackTable(a.pe, sk, set),
+    attackSlots: [0, 0],
+    hitPlayer: () => {}, // damage: 10d
+    view: identity(),
+    projScale: 240 * cameraProjection(0x1d3b, 4 / 3)[5]!,
+    inFight: false,
+    wordPickedFrame: -1,
   };
+  // Word files the stage's script can ask for (event op 0x61: groups 0 and 2), decoded up front.
+  const wordFiles = new Map<string, WordEntry[]>();
+  for (const group of [0, 2])
+    for (let level = 1; ; level++) {
+      const name = wordFileName(a.pe, group, level);
+      if (!name) break;
+      if (fs.has(`word/${name}`)) wordFiles.set(name, decodeWordList(await a.file(`word/${name}`)));
+    }
+  if (my !== token) return;
+  const deck = new WordDeck(a.pe, (name) => wordFiles.get(name), rng, stage - 1);
+  world.words = deck;
   player.start(0);
-  game = { stage, areas, sky: new Sky(readSkyTable(a.pe)), camFile, camIds: slot.ids, player, world, objects: [], spawned: 0, acc: 0, last: performance.now(), enter: false, bars: 0 };
+  game = { stage, areas, sky: new Sky(readSkyTable(a.pe)), camFile, camIds: slot.ids, player, world, objects: [], spawned: 0, fightsOver: 0, acc: 0, last: performance.now(), enter: false, bars: 0, boxes: new WordBoxes(a.pe, deck) };
+  // debug: the running game for inspection from the console / test scripts
+  if (new URLSearchParams(location.search).has('dev')) (window as unknown as { ttotdGame?: Game }).ttotdGame = game;
   for (let i = 0; i < at; i++) {
     player.step();
     stepObjects(game, false);
+    // a motion requested this frame: wait for it, as real-time play would have it a frame or two later
+    if (pendingLoads.size) await Promise.all([...pendingLoads]);
+    if (my !== token) return;
   }
-  // models and motions requested while fast-forwarding load asynchronously; give them a moment
+  // models requested by the first draws load asynchronously; give them a moment
   if (at) {
     game.frozen = true;
     await new Promise((r) => setTimeout(r, 1500));
@@ -251,7 +291,8 @@ function updateCamera(g: Game) {
   const local = shot ? g.camIds.indexOf(shot.pathId) : -1;
   if (local < 0) return;
   const c = cameraFromSample(g.camFile.sample(local, shot!.t));
-  g.view = { view: mul(cameraView(c), D3D_VIEW_FLIP), eye: c.eye };
+  const game = cameraView(c);
+  g.view = { view: mul(game, D3D_VIEW_FLIP), eye: c.eye, game };
 }
 
 /** Object tasks after the event script, once per frame, in spawn order; the sky task first. */
@@ -262,15 +303,24 @@ function stepObjects(g: Game, enter: boolean) {
   if (g.view) {
     g.sky.update(p.skyRow, p.skyMode, g.view.eye);
     w.eye = g.view.eye;
+    w.view = g.view.game;
   }
+  w.inFight = p.shot?.fight !== undefined;
+  g.boxes.applySetup(p.words);
   w.camPath = p.shot?.pathId ?? -1;
   w.camTime = p.timer;
   w.enter = enter;
   for (; g.spawned < p.spawns.length; g.spawned++) {
-    const obj = createObject(p.spawns[g.spawned]!, w);
-    if (obj) g.objects.push(obj);
+    const rec = p.spawns[g.spawned]!;
+    const obj = createObject(rec, w);
+    if (obj) {
+      g.objects.push(obj);
+      g.boxes.add(obj, rec.type);
+    }
   }
+  for (; g.fightsOver < p.fightsOver; g.fightsOver++) for (const o of g.objects) if (!o.dead) o.fightOver?.(w);
   for (const o of g.objects) if (!o.dead) o.update(w);
+  g.boxes.update(w);
   g.objects = g.objects.filter((o) => !o.dead);
   w.frame++;
 }
@@ -316,6 +366,21 @@ function draw(g: Game) {
     // what lets the mirrored street under the wet road (st1_01b) show through the puddles.
     deferred.sort((a, b) => b.depth - a.depth);
     for (const d of deferred) r.draw(d.gpu, d.tex, { ...opts, world: d.world, pass: 'translucent' });
+    // Word boxes (FUN_004aec20), in front of the scene: game view space at one tenth, tinted, lit by their own
+    // white light (FUN_004c2b30) along rotY(0x2000)·rotX(0x2000)·(0, 0, 1) in view space (FUN_0046d780 → FUN_004c2b70).
+    const inv = invert(g.view.game);
+    const toWorld = (m: Mat4) => mul(m, inv);
+    const dir = transformDir(inv, transformDir(rotateXLocal(rotateYLocal(identity(), 0x2000), 0x2000), [0, 0, 1]));
+    const len = Math.hypot(...dir) || 1;
+    const boxLight = { ...opts.lighting, lightDiffuse: [1, 1, 1] as [number, number, number], lightSpecular: [0, 0, 0] as [number, number, number], toLight: dir.map((v) => v / len) as [number, number, number] };
+    for (const d of g.boxes.draw(g.world, toWorld)) {
+      const m = modelCache.get(d.model);
+      if (!m) {
+        if (m === undefined) void loadModel(assets!.assets, d.model);
+        continue;
+      }
+      r.draw(m.gpu, m.tex, { ...opts, world: d.world, lighting: boxLight, fog: false, colorOverride: d.color });
+    }
     for (const t of temp) t.dispose();
   }
   placeOverlay(g, canvas);

@@ -27,3 +27,40 @@ export function readMotionSet(pe: PeImage, skeleton: number, kind: number): numb
   if (p < 0x400000) return undefined;
   return Array.from({ length: 6 }, (_, k) => pe.i32(p + k * 4));
 }
+
+/** One attack (16-byte row @005a258c[skeleton][set]). */
+export interface AttackRow {
+  /** Attack motion. */
+  attack: number;
+  /** Motion to walk in with until within `distance` of the target. */
+  approach: number;
+  distance: number;
+  /** Frame of the attack motion on which it hits (FUN_00445590). */
+  hitFrame: number;
+  damage: number;
+  /** Arms the attack needs (bits of the damage state obj +0x131c & 7): no hit if all are gone. */
+  arms: number;
+}
+
+export interface AttackTable {
+  /** Row to use: picks[(rand >> 4) % 10 + (damage state & 7) * 10] (@005a2434[skeleton][set], 4-byte stride). */
+  picks: Int8Array;
+  rows: AttackRow[];
+}
+
+const ATTACK_PICKS = 0x005a2434;
+const ATTACK_ROWS = 0x005a258c;
+
+export function readAttackTable(pe: PeImage, skeleton: number, set: number): AttackTable | undefined {
+  const pt = pe.u32(ATTACK_PICKS + skeleton * 4), rt = pe.u32(ATTACK_ROWS + skeleton * 4);
+  if (pt < 0x400000 || rt < 0x400000) return undefined;
+  const pp = pe.u32(pt + set * 4), rp = pe.u32(rt + set * 4);
+  if (pp < 0x400000 || rp < 0x400000) return undefined;
+  const picks = Int8Array.from({ length: 80 }, (_, i) => (pe.u8(pp + i * 4) << 24) >> 24);
+  const n = Math.max(0, ...picks) + 1;
+  const rows = Array.from({ length: n }, (_, r) => {
+    const a = rp + r * 16;
+    return { attack: pe.i16(a), approach: pe.i16(a + 2), distance: pe.f32(a + 4), hitFrame: pe.i16(a + 8), damage: pe.i16(a + 10), arms: pe.u16(a + 12) };
+  });
+  return { picks, rows };
+}

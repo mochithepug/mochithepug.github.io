@@ -336,3 +336,30 @@ fight for 10 s (was 3) so the approach can be seen.
 load after the freeze are never posed).
 **Fix (user: zskamere missing its belly in the Characters tab):** its belly piece's draw function (0x490290) is
 a second copy of the standard one and was skipped; now recognised (test: skeleton 0x17 → model 0x2378, group A0).
+
+### 10b (part 3) — Zombies attack (2026-11-23) ✅ verified by user 2026-11-23
+**Delivered:** zombie behaviours 3 (attack: pick a row from the exe's attack tables, walk in, swing, hit on the
+row's frame) and 4 (back off, give the attack slot back); behaviour 2 now asks for the player's attack slot —
+one attacker at a time, so the first wave takes turns. A hit calls `World.hitPlayer(player, hit, damage)` (no
+effect yet: damage is 10d).
+**Verified:** test — never more than one attacker; all three swing (0x42e); every hit = player 0, 9 damage;
+real-time screenshots: a zombie lunging at the camera, backing off, the next one coming in.
+**Not yet:** off-screen attacker lock, lost arms, cool-down, two-player rules, sounds, damage.
+
+### 10c (part 1) — Word boxes (2026-11-23) ✅ verified by user 2026-11-23
+**Delivered:** enemies with word flags (zombies) get a word box, as `spawn_record` does: the word comes from the
+exe's word state — event op 0x61 (group, time budget) → word level by rank (FUN_004b16b0) → the built-in
+two-letter list (category 1) or a `word/Z000Lnnn.bin` file; random picks avoiding the last 16 and any first letter
+already on screen. The box follows the zombie's torso (joint 1) with the exe's smoothing, stays on screen, and is
+drawn from the game's own models (tod_boxetc frame pieces, letter models): black box, danger-coloured frame, the
+word in yellow and the line to type in white; shown only during fights. Rank starts at 1, +1 every 30 s.
+**Verified:** tests — category 1 = 41 words incl. Me / U2 (the user's library screenshot), word levels for Stage 1
+budgets, word flags per type, the first wave's three boxes (different first letters, 13 items each); real-time
+screenshots of the first fight (boxes follow the zombies; a lunging zombie's box is clamped to the screen).
+**Not yet:** typing (targeting, letters, shooting), red target brackets, fight end; rank changes from play;
+category 0's special picks; the frame colour saturates to yellow when lit (open: same in the original?).
+**Stand-in (user request): when a fight's hold runs out, its zombies end as if shot** (`GameObject.fightOver`,
+`EventPlayer.fightsOver`): no leftover zombies — fixes the stray word boxes and the library fight's attack order
+(a leftover first-wave zombie held the attack slot). Removed again once typing ends fights (10c step 3).
+Verified: test (after fight 1: no zombies, slot free, no boxes); screenshot of the library fight: two boxes only,
+the jeans zombie in front as in the user's original screenshot.

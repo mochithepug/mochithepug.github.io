@@ -92,6 +92,10 @@ export class EventPlayer {
    * start (readApproachBands); op 0x0E changes a row.
    */
   bands: number[][] = [];
+  /** Word setup for the next words (op 0x61 → FUN_004b1510(group, time budget)); `count` goes up with each. */
+  words = { group: 0, budget: 25, count: 0 };
+  /** Fights ended so far (the hold ran out; until typing is ported the owner ends the fight's enemies). */
+  fightsOver = 0;
   /** Stage area to draw (DAT_00a11124, op 0x29). */
   area = 0;
   /** Sky row (DAT_00a118d4, op 0x1b) and mode (DAT_00a3e764, op 0x1c: 0 off, 1 turning, 2 still). */
@@ -316,6 +320,11 @@ export class EventPlayer {
           advance();
           break;
         }
+        case 0x61:
+          this.words = { group: w(1), budget: w(2), count: this.words.count + 1 };
+          this.add('other', `words: group ${w(1)}, time ${w(2)}`);
+          advance();
+          break;
         case 0x29:
           this.area = (w(1) << 16) >> 16;
           this.add('other', `stage area ${this.area}`);
@@ -452,6 +461,7 @@ export class EventPlayer {
       if (s && s.fight !== undefined) {
         if (--s.fight > 0) return;
         this.add('camera', 'fight over' + (this.resume ? ` → resume path ${this.resume.pathId}` : ''));
+        this.fightsOver++;
         this.pendingCamera--;
         s.fight = undefined;
         if (this.resume) {

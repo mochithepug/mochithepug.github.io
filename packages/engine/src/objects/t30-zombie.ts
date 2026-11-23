@@ -5,14 +5,17 @@
  * motion counter advances unless frozen (obj +0x34 & 0x4000).
  * Behaviours ported: 18 `FUN_00446700` (play a motion, wait for a camera time, then the next behaviour),
  * 26 `FUN_00447380` (wait, leap along an arc to a target, land), 1 `FUN_00444520` (walk to the player, turning
- * towards them; within the near band → 2) and 2 `FUN_00444770` (stand facing the player). Others hold still.
- * Not ported: the attack decision in 2 (FUN_00444e90 → 3 attack, FUN_00444ac0) and backing off (4,
- * FUN_00444ce0), being hit, word box, head turning to the player (FUN_00442c60), special part models
- * (FUN_00442510), groans and other sounds.
+ * towards them; within the near band → 2), 2 `FUN_00444770` (stand facing the player; when the player's attack
+ * slot is free take it → 3; too close → 4), 3 `FUN_00444ac0` (pick an attack, walk in, swing, hit on the row's
+ * frame) and 4 `FUN_00444ce0` (back off past the near band, free the slot → 2). Others hold still.
+ * One-player rules only. Not ported: the off-screen attacker lock (FUN_00436fa0 / DAT_00a11a78), lost arms
+ * (FUN_00444970), the attack cool-down (+0x1340 / +0x136c), being hit, word box, head turning to the player
+ * (FUN_00442c60), special part models (FUN_00442510), kind-6 effects, groans and other sounds.
  */
-import { transformDir, type SpawnRecord } from '@ttotd/formats';
+import { transformDir, transformPoint, type SpawnRecord } from '@ttotd/formats';
 import { rotationMatrix, toAngle } from '../core/angles.ts';
 import type { DrawItem, GameObject, World } from '../core/object.ts';
+import type { WordOwner } from './wordbox.ts';
 import { CharacterRig, type Placement } from '../core/rig.ts';
 
 type Vec3 = [number, number, number];
@@ -37,7 +40,7 @@ export const heading = (dx: number, dz: number) => toAngle(Math.atan2(dx, dz));
 const view = (b: Uint8Array | undefined) => (b ? new DataView(b.buffer, b.byteOffset, b.byteLength) : undefined);
 const f32 = Math.fround;
 
-export class Zombie implements GameObject {
+export class Zombie implements GameObject, WordOwner {
   readonly rig: CharacterRig;
   readonly place: Placement;
   readonly skeleton: number;
@@ -54,6 +57,25 @@ export class Zombie implements GameObject {
   private gravity = 0; // +0x1384
   private airFrames = 0; // +0x1334
   private hold = 0; // +0x1354
+  /** Word box anchor: joint 1 in view space (+0x10c) and world space (+0x100, y + 4 by FUN_00436f00). */
+  anchor?: Vec3;
+  worldAnchor?: Vec3;
+  /** Word flags (+0x194 = @005a2848[0x30] | 0x30000000). */
+  wordFlags = 0x30000001;
+  dead?: boolean;
+  /** Player being attacked (+0x121), −1 none. */
+  victim = -1;
+  /** Attack row in use (+0x131e). */
+  private attackRow = 0;
+  /** Damage state (+0x131c; low 3 bits: arms lost). */
+  private damage = 0;
+  /** Second flag word (+0x1370). */
+  private flags2 = 0;
+  /** Where it stood when the attack began (+0x13dc) and the point it attacks (+0x13e8). */
+  private spot: Vec3 = [0, 0, 0];
+  private attackPoint: Vec3 = [0, 0, 0];
+  /** Back-off frames (+0x1338). */
+  private backTimer = 0;
   private readonly tail?: Uint8Array;
   private items: DrawItem[] = [];
 
@@ -84,10 +106,26 @@ export class Zombie implements GameObject {
     else if (this.behaviour === 26) this.leap(w);
     else if (this.behaviour === 1) this.approach(w);
     else if (this.behaviour === 2) this.stand(w);
+    else if (this.behaviour === 3) this.attack(w);
+    else if (this.behaviour === 4) this.backOff(w);
     for (let k = 0; k < 3; k++) this.place.pos[k] = f32(this.place.pos[k]! + this.vel[k]!);
     this.rig.pose(this.place);
     this.items = this.rig.draw();
+    // FUN_00475420 at joint 1: view- and world-space position; FUN_00436f00(4): world y + 4
+    const j = this.rig.joints[1]?.matrix;
+    if (j) {
+      const world: Vec3 = [j[12]!, j[13]!, j[14]!];
+      this.anchor = transformPoint(w.view, world) as Vec3;
+      this.worldAnchor = [world[0], f32(world[1] + 4), world[2]];
+    }
     if (!(this.flags & 0x4000)) this.rig.counter++;
+  }
+
+  /** Stand-in for being shot when the fight hold runs out: if taking part (not still waiting for its cue). */
+  fightOver(w: World) {
+    if (this.behaviour === 18 || this.behaviour === 26) return;
+    this.releaseAttack(w);
+    this.dead = true;
   }
 
   /** Approach band row (obj +0x1323, set in FUN_00441d80). */
@@ -136,13 +174,117 @@ export class Zombie implements GameObject {
     // happens for these zombies.
   }
 
-  /** Behaviour 2 (FUN_00444770) without the attack decision: idle motion, face the player. */
+  /** Behaviour 2 (FUN_00444770): stand facing the player; take the attack slot → 3; too close → 4. */
   private stand(w: World) {
+    const near = (w.bands[this.bandRow] ?? [25])[0]!;
+    if (this.skeleton !== 0 && !(this.flags2 & 0x40400) && this.playerDistance(w) < near - 1) {
+      this.behaviour = 4;
+      this.state = 0;
+      return;
+    }
+    // Allowed to ask (no +0x400 flag; +0x135c = DAT_00a3b7f0.. ≥ 2 > +0x1321 = −1; +0x1322 < 3; no cool-down).
+    if (!(this.flags2 & 0x400) && this.requestAttack(w)) {
+      this.behaviour = this.kind === 4 ? 0x34 : 3;
+      this.state = 0;
+      return;
+    }
     const set = w.motionSet(this.skeleton, this.kind);
-    // The exe backs off (behaviour 4) when closer than near − 1; not ported — stands instead.
     if (set && this.rig.motion !== set[0]) this.rig.blendTo(set[0]!, w.rand() % 5, 10); // + voice 0x1917a9
     const target = heading(this.place.pos[0] - w.eye[0], this.place.pos[2] - w.eye[2]);
     this.place.angles[1] = turnTowards(this.place.angles[1], target, 0x40); // FUN_00437250
+  }
+
+  /** FUN_00444e90, one player: take the player's attack slot if it is free. */
+  private requestAttack(w: World): boolean {
+    this.victim = -1;
+    if (w.attackSlots[0]) return false;
+    this.victim = 0; // FUN_00437180: the player is in the fight
+    w.attackSlots[0] = 1;
+    return true;
+  }
+
+  /** FUN_00445620: give the attack slot back. */
+  private releaseAttack(w: World) {
+    if (this.victim !== -1) {
+      w.attackSlots[this.victim] = 0;
+      this.victim = -1;
+    }
+  }
+
+  /** FUN_00445000, one player: face the player at once; the attack point is the player. */
+  private aim(w: World) {
+    const e = w.eye;
+    this.place.angles[1] = heading(this.place.pos[0] - e[0], this.place.pos[2] - e[2]);
+    this.attackPoint = [e[0], e[1], e[2]];
+  }
+
+  /** Ground distance to the attack point. */
+  private attackDistance() {
+    const dz = this.place.pos[2] - this.attackPoint[2], dx = this.place.pos[0] - this.attackPoint[0];
+    return f32(Math.sqrt(dz * dz + dx * dx));
+  }
+
+  /** Behaviour 3 (FUN_00444ac0): walk in, swing, hit on the row's frame, then back off (4). */
+  private attack(w: World) {
+    const table = w.attackTable(this.skeleton, this.kind);
+    const r = this.rig;
+    if (this.state === 0) {
+      this.flags = ((this.flags & ~0x100) | 0x10000000) >>> 0;
+      const n = w.rand();
+      this.attackRow = table?.picks[((n >> 4) % 10) + (this.damage & 7) * 10] ?? 0;
+      this.state = 1;
+    }
+    const row = table?.rows[this.attackRow];
+    if (this.state === 1) {
+      this.aim(w);
+      if (row && this.attackDistance() > row.distance) {
+        if (r.motion !== row.approach) r.blendTo(row.approach, 0, 10);
+        return;
+      }
+      if (row) r.blendTo(row.attack, 0, 5);
+      this.flags2 = ((this.flags2 & ~0x10000) | 0x80000) >>> 0;
+      w.rand(); // attack voice (FUN_00437ab0 case 3), not played
+      if (!(this.flags2 & 0x40000)) {
+        this.spot = [...this.place.pos];
+        this.flags2 |= 0x40000;
+      }
+      this.state = 2;
+    }
+    if (this.state !== 2) return;
+    this.aim(w);
+    if (row && r.frame === row.hitFrame && (this.victim === 0 || this.victim === 1) && ((this.damage & 7) & row.arms) !== row.arms)
+      w.hitPlayer(this.victim, this.flags & 0x2000000 ? 0 : 1, row.damage); // FUN_00445590
+    if (r.frame >= w.motions.frames(r.motion) - 1) {
+      this.behaviour = 4;
+      this.state = 0;
+    }
+  }
+
+  /** Behaviour 4 (FUN_00444ce0): back off from the attack point, then free the slot and stand (2). */
+  private backOff(w: World) {
+    const d = this.attackDistance();
+    const near = (w.bands[this.bandRow] ?? [25])[0]!;
+    const set = w.motionSet(this.skeleton, this.kind);
+    if (this.state === 0) {
+      this.backTimer = 0;
+      this.flags = ((this.flags & ~0x10000000) | 0x20000000) >>> 0;
+      this.flags2 &= ~0x400000;
+      this.state = 1;
+    } else if (this.state !== 1) return;
+    const start = w.rand();
+    if (set) this.setMotion(set[4]!, start % 5, 10);
+    // FUN_00437360 towards the spot it came from with a negative step: it keeps its back to it
+    const target = heading(this.place.pos[0] - this.spot[0], this.place.pos[2] - this.spot[2]);
+    this.place.angles[1] = turnTowards(this.place.angles[1], target, this.flags2 & 0x400000 ? 0x40 : -0x40);
+    this.backTimer++;
+    const far = this.backTimer > 0xf0 || near < d || (this.kind === 4 && near * Math.fround(0.7) < d);
+    const r = this.rig;
+    if (far && (r.motion !== 0x11d || r.frame >= w.motions.frames(0x11d) - 1)) {
+      this.flags = (this.flags & ~0x20000000) >>> 0;
+      this.releaseAttack(w);
+      this.behaviour = 2;
+      this.state = 0;
+    }
   }
 
   /** Behaviour 18 (FUN_00446700). */

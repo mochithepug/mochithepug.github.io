@@ -3,7 +3,8 @@
  * plus a task function called once per frame that updates and draws it; here `update` does the work and
  * `draw` hands back what to render (global model id + world matrix).
  */
-import type { CharacterType, Mat4, Motion, ObjectPathSample, SkinPiece, SpawnRecord } from '@ttotd/formats';
+import type { WordDeck } from './words.ts';
+import type { AttackTable, CharacterType, Mat4, Motion, ObjectPathSample, SkinPiece, SpawnRecord } from '@ttotd/formats';
 
 /** New position and normal for some vertex records of a skin model (FUN_00490870 / FUN_004908c0). */
 export interface VertexPatch {
@@ -19,6 +20,10 @@ export interface DrawItem {
   world: Mat4;
   /** Skin models: vertices moved this frame. */
   patch?: VertexPatch[];
+  /** Material colour for every mesh (FUN_00489140). */
+  color?: [number, number, number];
+  /** 2D-like overlay (word boxes): drawn after the scene. */
+  overlay?: boolean;
 }
 
 /** Motions by global id: frame counts from the exe table, data once loaded. */
@@ -59,6 +64,22 @@ export interface World {
   motionSet(skeleton: number, kind: number): number[] | undefined;
   /** crt_rand. */
   rand(): number;
+  /** Attack table of a skeleton's set (@005a2434 / @005a258c). */
+  attackTable(skeleton: number, set: number): AttackTable | undefined;
+  /** Attack slot per player (DAT_00a11840): 1 while an enemy is attacking that player — one attacker each. */
+  attackSlots: number[];
+  /** FUN_004846d0: an attack reaches player `player` (hit = 1, or 0 when the attacker is flagged 0x2000000). */
+  hitPlayer(player: number, hit: number, damage: number): void;
+  /** Game camera view (the exe's view space: z negative ahead), world → view. */
+  view: Mat4;
+  /** Projection scale DAT_00a11a10 = 240 / tan(fov / 2). */
+  projScale: number;
+  /** Camera mode DAT_00a39448 = 2: a fight. */
+  inFight: boolean;
+  /** Word state (DAT_00839cc0 …). */
+  words?: WordDeck;
+  /** Frame a word was last picked (DAT_00839d24). */
+  wordPickedFrame: number;
 }
 
 export interface GameObject {
@@ -66,6 +87,11 @@ export interface GameObject {
   update(w: World): void;
   /** What to draw this frame. */
   draw(w: World): DrawItem[];
+  /**
+   * The fight hold ran out — stand-in until typing ends fights: the player would have shot the fight's
+   * enemies, so enemies taking part end themselves.
+   */
+  fightOver?(w: World): void;
   /** Set when the task ends (FUN_004bec90). */
   dead?: boolean;
 }

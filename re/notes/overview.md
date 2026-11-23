@@ -648,9 +648,78 @@ Characters have extra **skin models** whose vertices follow two joints, filling 
 - **3 `FUN_00444ac0` attack**: attack row from @005a2434 / @005a258c per skeleton & set (random of 10 by
   damage state +0x131c & 7); walks to the attack point (+0x13e8), plays the attack, hits at a frame
   (FUN_00445590), then → 4. **4 `FUN_00444ce0` back off**: set[4] motion, moves to the saved spot +0x13dc for up to
-  0xF0 frames / until past near, → 2. (3 and 4 not ported yet.)
+  0xF0 frames / until past near, → 2. Ported 2026-11-23 (one-player rules), details below.
+- **Attack details**: `FUN_00444e90` (1P, DAT_00a3b844 = 1): nothing if DAT_00a11a78 (an off-screen attacker
+  holds the lock); target = player DAT_00a39540 if its slot DAT_00a11840[p] is 0; `FUN_00437180` (player in the
+  fight: DAT_00a39448 = 2 and player state DAT_00a143c2[p·0x104] = 5) else none; `FUN_00436fa0` (on screen: view
+  x/z, y/z bounds) — if off screen sets +0x1370 0x20000 and the lock; slot = 1. Released by `FUN_00445620`
+  (end of 4; also clears the lock). Attack counts DAT_00a3b7f0/f4/f8 = 2/3/4 (`FUN_00420480`; event "ZXAT2" sets
+  them) are only compared with +0x1321 = −1.
+  Behaviour 3: state 0 picks row = byte @005a2434[skel][set] + ((rand >> 4) % 10 + (+0x131c & 7)·10)·4; row @005a258c
+  [skel][set] + row·16 = {i16 attack, i16 approach, f32 distance, i16 hit frame, i16 damage, u16 arms}. State 1:
+  `FUN_00445000` (1P: heading straight at the player, attack point +0x13e8 = player) — farther than distance →
+  approach motion (blend 10); else attack motion (blend 5), +0x1370 |= 0x80000, voice (one rand), save the spot
+  +0x13dc once (flag 0x40000). State 2: on the hit frame `FUN_00445590` → `FUN_004846d0(player, obj +0x34 &
+  0x2000000 ? 0 : 1, damage)` unless all needed arms are lost; motion end → 4. Hooks @005a2240/44 = effects for
+  kind 6 only. znsam2 set 0: row 2 = attack 0x42e, approach 0x401, 26, hit frame 55, damage 9 (row 3, one arm
+  lost: 0x410, 25, 62, 7). The swing's root motion lunges to ~10 from the camera.
+  Behaviour 4: set[4] (znsam2 0x429) from a random frame 0–4; `FUN_00437360` turns towards the saved spot with
+  step −0x40 (sign by +0x1370 0x400000) — i.e. keeps its back to it while the motion walks it backwards; ends when
+  > 0xF0 frames or farther than near from the attack point (kind 4: 0.7·near), not mid-0x11d.
 - Bands: defaults @004dec80 copied at stage start (`FUN_0044eab0`), row 0 = 25 / 38 / 51; event **op 0x0E**
   (`FUN_00420430`) sets a row (Stage 1 does not use it). Set-up `FUN_00441d80`: +0x1310 = record kind, +0x1323 = 2
   for skeleton 0 else 0, +0x1321 = −1, motion 0x3f5 (0x457 for kind 4).
 - Player position DAT_00a396a0 ← DAT_00a149e0 = the camera eye (FUN_0040d5b0 samples the camera path, blended
   (1·new + 15·old)/16 only during camera transitions, FUN_0040c4c0).
+
+## Typing: words, word boxes, targeting (M10c research, 2026-11-23)
+
+- **Who gets a box**: `spawn_record` (FUN_00420050) creates a word-box task (`FUN_004b2a30`, 0x2ac bytes,
+  box +0x20 = owner) when @005a2848[type] ≠ 0 and the game mode DAT_00a3b858 ∈ {5, 6, 9} (typing modes); owner
+  +0x194 = that value | 0x30000000 (word flags). Zombie 0x30 → 1, 0x31 → 4, daemon 0x22 → 0x4000804; 0x20, 0x24,
+  0x25, 0x33, 0x41, 0x44 → none. Owner +0x11c = record hp (1 → flags |= 0x14, 2 → |= 0x24: short-word categories).
+  Props with words: FUN_00454d30 (@005b5410[kind]). Bosses create their own boxes.
+- **Word for a box** (`FUN_004b1ef0` → `FUN_004b1f80`, first frame the box may show): category from
+  `FUN_004b2400` (flags 0x10 → 0, 0x20 → 1, 0xc0/0x100 → 5, else the current default DAT_00839cc0); list by
+  category (`FUN_004b3f80`, 12-byte records = word-file records): 0 @0058f0e8 (count @0058f928 & 0xff), 1
+  PTR @005eaaa0 (count @005eaaa4), 2 the loaded word file (DAT_00846d30, count DAT_00846d2c), 3 @0058f410,
+  4 @0058f510, 5 @0058f658. Index = `FUN_004b19f0(lo, n)`: rand % (n − lo) + lo, retried (16×) while in the last
+  16 picks (DAT_00839cc4 ring). Accept only if the first character code differs from every other box slot's
+  (`FUN_004b23a0`, 14 slots DAT_00839c80, slot = owner +0x3c); up to 16 random tries, then downwards from the end.
+  Box +0x50 = word line, +0x9e = record i16, +0x9c = record flags (high half of `value`), +0xa4 = width.
+- **Word level** — event **op 0x61 (group, time budget)** → `FUN_004b1510` (also called by bosses / code):
+  `FUN_004b16b0(budget, 0)`: p = budget · DAT_005ea9e4 (0.1; modes 0/1: @0058e410[DAT_00a3c1e0] · K, set in
+  FUN_004aea10) · (1.2 unless language DAT_005ea730 = 'A'); p ≤ 15 → p + @005ea6c8[rank]; 15 < p ≤ 30 → p +
+  @005ea6d8[rank]; above → p · (1 + @005ea688[rank] · k) with k by band (45/65/85/120/150/180/210/240); clamp
+  [DAT_00839ca8, 2000]; < 3 → 0; level = min(19, trunc(p)). Level < 0 → category 0, 0 → category 1, > 0 →
+  category 2 with `word/` file @005eaaac[group] + level − 1 (`load_word_list`). Budget −2 = random file of the
+  group (FUN_004b4080 count). Stage 1 uses op 0x61 `0 25`, `0 50`, `0 100`, `0 150`, `2 −2`; op 0x0F sets the
+  attack counts DAT_00a3b7f0.. (Stage 1: `1 2 3`, `2 3 4`, `3 3 4`).
+- **Rank** DAT_00a3b856 (`FUN_00437c60`, capped 12 in Stage 1 (DAT_00a10c08 = 0), 14 in Stage 2): starts at
+  @004f43cc[difficulty DAT_00a3b99c] (−3, −1, 1, 4, 8) + 4·players (FUN_00409f70; FUN_00451fc0 sets 1), +1 every
+  0x708 frames (+2 with ≥ 4 lives), + DAT_00a11d14 (performance), clamped 0–15 (FUN_00451ff0).
+- **Box per frame** (`FUN_004b2a30`): follows the owner's view-space anchor +0x10c..+0x114 — stored in the rig
+  draw (`FUN_00475420`) at **joint 1** (torso; 9 or 2 in special modes) as view position (+0x100..+0x108 = world)
+  — with smoothing (0.? per frame, @004dec48) and depth +0x114 + @004dd6c4; per player: targeting
+  (`FUN_004b3080`, input buffer DAT_0087b5e0 + p·0x150, matcher FUN_004b4260) and typing (`FUN_004b31f0` →
+  FUN_004b32f0). Queued (DAT_008395c4, max 14) by `FUN_004ae960`; drawn by `FUN_004aec20`: clamps to the screen
+  (x within ±@0058e434/430 · z/s, y @0058e42c/@00519138), pushes overlapping boxes apart vertically, then
+  `FUN_004b0c90` (normal) / `FUN_004b1100` (flag 0x200) / dimmed (flag 0x100).
+- Zombie task also calls `FUN_00436f00(4)`: +0x70 = player view · (+0x100) (used by the on-screen test) and the
+  world anchor y += 4. The shadow blob (model 0x110d, `FUN_004379e0`) is drawn after the rig.
+- **Box drawing details** (ported 2026-11-23, `engine/src/objects/wordbox.ts`): width +0xa4 = trunc(word width +
+  2.3) (FUN_004b1b30). `FUN_004b0c90` (1P, DAT_00839cb4 = 0): word line (FUN_004b0890 line 1, yellow) at
+  x + centre·s·0.75, y + 0.13·s; typing line (line 0, white, first +0x99 hidden) at y − 1.3·s; one-letter words
+  one line ×1.2 at y − 0.65·s (FUN_004b0980). +0x98 = character count. Frame `FUN_004b01a0`: tod_boxetc #6–#13
+  (0x129e/0x1373/0x170c, 0x12a3/0x19d/0x1738, 0x12c5/0x13dd/0x1769), placed by `FUN_004b0490` = translate(p·0.1),
+  scale(sx·s·0.1, sy·s·0.1, s·0.1): left = x − (w−2)s/2, rows at y − s, y, y + s (heights 0.25, 1.25, 0.25),
+  edges (w−1)/2 − 0.03 wide, centre ((w−0.5)/2 − 0.08w − 0.03)/2 × (1.25/2 + 0.025). Colour on all but the centre
+  (FUN_00489140): danger d = clamp((ground dist − 20)·0.025, 0, 1) → d = 0 blink (1, 0/1, 0) every 4 frames, ≤ 0.5
+  (1, 2d, 0), else (2(1−d), 1, 0). **The centre model is set black once** (`FUN_004afd90`). Letters
+  (`FUN_004b2530`): model @0058efa8[c], translate((x, y + drop, z)·0.1), scale (s, h·s, s)·0.1, colour (1,1,0)
+  word / (1,1,1) typing; drop −0.2·s for g/p/q/y, −0.1·s for j. Before drawing: `FUN_004afd50` (z > −10 → moved to
+  z = −10 with x, y scaled), `FUN_004affd0` (size × ((−32 − z)/32 + 1) beyond 32, × (1 − (z + 28)/28) nearer than
+  28; x within ±(270 − 8·w·s)·|z|/s_proj unless w > 25; y within ±150·|z|/s_proj). Boxes are **lit**: white light
+  (FUN_004c2b30) along rotY(0x2000)·rotX(0x2000)·(0,0,1) in view space (FUN_0046d780 → FUN_004c2b70). Drawing at
+  one tenth of the view-space anchor keeps the screen position and puts the box in front of the scene.
+  DAT_00a11a10 = 240 / tan(fov/2) (FUN_00488260). Specular assumed off (the original's word line is yellow).

@@ -8,3 +8,5 @@ export * from './objects/t30-zombie.ts';
 export * from './objects/t60-titlecard.ts';
 export * from './registry.ts';
 export * from './objects/sky.ts';
+export * from './core/words.ts';
+export * from './objects/wordbox.ts';

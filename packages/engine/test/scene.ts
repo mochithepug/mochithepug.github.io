@@ -4,6 +4,12 @@ import { join } from 'node:path';
 import {
   CameraFile,
   cameraFromSample,
+  cameraProjection,
+  cameraView,
+  decodeWordList,
+  identity,
+  invert,
+  mul,
   EventFile,
   EventPlayer,
   EVT_COM_BASE,
@@ -15,13 +21,14 @@ import {
   readApproachBands,
   readCameraSlots,
   readMotionSet,
+  readAttackTable,
   readCharacterTypes,
   readSkins,
   readDialogue,
   readMotionTable,
   STAGE_EVENT_FILES,
 } from '@ttotd/formats';
-import { createObject, CrtRand, type GameObject, type MotionLib, type World } from '../src/index.ts';
+import { createObject, CrtRand, WordBoxes, WordDeck, type GameObject, type MotionLib, type World } from '../src/index.ts';
 
 export function loadScene(dir: string, stage = 1, block = 0, holdFrames = 60) {
   const pe = new PeImage(new Uint8Array(readFileSync(join(dir, 'Tod_e.exe'))));
@@ -49,6 +56,7 @@ export function loadScene(dir: string, stage = 1, block = 0, holdFrames = 60) {
   const player = new EventPlayer(ef, { rules: readBlockRules(pe, stage - 1), dialogue: (id) => readDialogue(pe, id, 0), common, followBlocks: false, holdFrames });
   player.bands = readApproachBands(pe);
   const rng = new CrtRand();
+  const hits: { frame: number; player: number; hit: number; damage: number }[] = [];
   const world: World = {
     camPath: -1,
     camTime: 0,
@@ -68,28 +76,57 @@ export function loadScene(dir: string, stage = 1, block = 0, holdFrames = 60) {
     bands: player.bands,
     motionSet: (sk, kind) => readMotionSet(pe, sk, kind),
     rand: () => rng.next(),
+    attackTable: (sk, set) => readAttackTable(pe, sk, set),
+    attackSlots: [0, 0],
+    hitPlayer: (player, hit, damage) => hits.push({ frame: world.frame, player, hit, damage }),
+    view: identity(),
+    projScale: 240 * cameraProjection(0x1d3b, 4 / 3)[5]!,
+    inFight: false,
+    wordPickedFrame: -1,
   };
+  const deck = new WordDeck(pe, (name) => {
+    const f = join(dir, 'word', name);
+    return existsSync(f) ? decodeWordList(new Uint8Array(readFileSync(f))) : undefined;
+  }, rng);
+  world.words = deck;
+  const boxes = new WordBoxes(pe, deck);
   const objects: { obj: GameObject; type: number }[] = [];
-  let spawned = 0;
+  let spawned = 0, fightsOver = 0;
   player.start(block);
   return {
     pe,
     player,
     world,
     objects,
+    /** Attacks that reached a player (World.hitPlayer). */
+    hits,
+    boxes,
+    /** Word box draw items (world matrices). */
+    boxItems: () => boxes.draw(world, (m) => mul(m, invert(world.view))),
     /** One 60 Hz frame: script, then every object in spawn order. */
     step() {
       player.step();
       world.camPath = player.shot?.pathId ?? -1;
       world.camTime = player.timer;
       const k = player.shot ? camSlot.ids.indexOf(player.shot.pathId) : -1;
-      if (k >= 0) world.eye = cameraFromSample(cam.sample(k, player.shot!.t)).eye;
+      if (k >= 0) {
+        const c = cameraFromSample(cam.sample(k, player.shot!.t));
+        world.eye = c.eye;
+        world.view = cameraView(c);
+      }
+      world.inFight = player.shot?.fight !== undefined;
+      boxes.applySetup(player.words);
       for (; spawned < player.spawns.length; spawned++) {
         const rec = player.spawns[spawned]!;
         const obj = createObject(rec, world);
-        if (obj) objects.push({ obj, type: rec.type });
+        if (obj) {
+          objects.push({ obj, type: rec.type });
+          boxes.add(obj, rec.type);
+        }
       }
+      for (; fightsOver < player.fightsOver; fightsOver++) for (const o of objects) if (!o.obj.dead) o.obj.fightOver?.(world);
       for (const o of objects) if (!o.obj.dead) o.obj.update(world);
+      boxes.update(world);
       world.frame++;
     },
   };
