@@ -2,7 +2,7 @@
  * Game screen (PLAY): runs a stage as the game does, at a fixed 60 Hz.
  * Each frame: the event script, then every live object in spawn order (objects ported in @ttotd/engine;
  * the registry picks the class for a spawn record's type, unported types are skipped), then drawing.
- * Fights are held for a few seconds — typing and damage are not ported yet.
+ * Fights last until their enemies are dead (typing kills them; damage to the player is not ported yet).
  */
 import {
   CameraFile,
@@ -51,8 +51,6 @@ import { Renderer, translucentDepth, type GpuModel, type TextureSource } from '.
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 
-/** Frames a fight is held until gameplay is ported. */
-const FIGHT_HOLD = 600;
 /** Cut-scene letterbox bar height in 640×480 pixels (provisional, as in the Stage view). */
 const CINE_BAR = 60;
 /**
@@ -73,8 +71,7 @@ interface Game {
   objects: GameObject[];
   /** Spawn records already turned into objects. */
   spawned: number;
-  /** Fights already ended for the objects (EventPlayer.fightsOver). */
-  fightsOver: number;
+
   acc: number;
   last: number;
   enter: boolean;
@@ -170,7 +167,8 @@ export async function startGame(fs: GameFS, stage = 1, at = 0) {
     rules: readBlockRules(a.pe, stage - 1),
     dialogue: (id) => readDialogue(a.pe, id, 0) ?? readDialogue(a.pe, id, 2),
     common,
-    holdFrames: FIGHT_HOLD,
+    holdFrames: Infinity, // the fight camera finishes by endFight() (FUN_0040cda0's rule)
+    enemyCounts: () => ({ enemies: game?.world.enemies ?? 0, attackers: game?.world.attackers ?? 0 }),
   });
   await loadSkipSign(a);
   await loadTitle(a, stage);
@@ -206,6 +204,8 @@ export async function startGame(fs: GameFS, stage = 1, at = 0) {
     targets: [-1, -1],
     camYaw: 0,
     enemies: 0,
+    attackers: 0,
+    active: 0,
   };
   // Word files the stage's script can ask for (event op 0x61: groups 0 and 2), decoded up front.
   const wordFiles = new Map<string, WordEntry[]>();
@@ -219,7 +219,7 @@ export async function startGame(fs: GameFS, stage = 1, at = 0) {
   const deck = new WordDeck(a.pe, (name) => wordFiles.get(name), rng, stage - 1);
   world.words = deck;
   player.start(0);
-  game = { stage, areas, sky: new Sky(readSkyTable(a.pe)), camFile, camIds: slot.ids, player, world, objects: [], spawned: 0, fightsOver: 0, acc: 0, last: performance.now(), enter: false, bars: 0, boxes: new WordBoxes(a.pe, deck), keys: [] };
+  game = { stage, areas, sky: new Sky(readSkyTable(a.pe)), camFile, camIds: slot.ids, player, world, objects: [], spawned: 0, acc: 0, last: performance.now(), enter: false, bars: 0, boxes: new WordBoxes(a.pe, deck), keys: [] };
   // debug: the running game for inspection from the console / test scripts
   if (new URLSearchParams(location.search).has('dev')) (window as unknown as { ttotdGame?: Game }).ttotdGame = game;
   for (let i = 0; i < at; i++) {
@@ -325,9 +325,11 @@ function stepObjects(g: Game, enter: boolean) {
       g.boxes.add(obj, rec.type);
     }
   }
-  for (; g.fightsOver < p.fightsOver; g.fightsOver++) for (const o of g.objects) if (!o.dead) o.fightOver?.(w);
+  w.active = 0;
   for (const o of g.objects) if (!o.dead) o.update(w);
   g.boxes.update(w);
+  // FUN_0040cda0: the fight is over once no enemy is left (not dying, nothing registered)
+  if (w.inFight && w.attackers === 0 && w.active === 0) p.endFight();
   g.objects = g.objects.filter((o) => !o.dead);
   w.frame++;
 }
@@ -411,7 +413,6 @@ function placeOverlay(g: Game, canvas: HTMLCanvasElement) {
   const sub = p.subtitle;
   $('game-subtitle').textContent = sub ? sub.speech.lines[sub.line]?.text ?? '' : '';
   if (p.done) setStatus(`End of Stage ${g.stage} so far — Esc to quit`);
-  else if (p.shot?.fight !== undefined) setStatus('Fight — not ported yet');
   else setStatus('');
 }
 

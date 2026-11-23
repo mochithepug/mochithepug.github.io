@@ -760,3 +760,45 @@ Characters have extra **skin models** whose vertices follow two joints, filling 
   DAT_00839cb0[p] loses the target: buffer emptied (FUN_00401310), box line reset (FUN_00401ce0(line, 0)),
   FUN_00484d50(p), sound 0x3e16a9. Port: the targeted word starts again (typed = 0). Our PLAY screen also uses
   Esc to leave when there is nothing to cancel.
+
+## Fight end (ported 2026-11-23)
+
+- Camera mode 0x21 [n] = `FUN_0040de00`: attack slots cleared, DAT_00a39460 = 3, camera mode 2
+  (`FUN_0040e2a0(2, n)` → per-player handlers @005983e4[n + 18]: fights 4–7 differ in DAT_00a395e0 only), per-frame
+  camera DAT_00a14a2c = @005982f0[n].
+- Per frame `FUN_0040cda0`: active = any entry of DAT_00a147e0 (rebuilt each frame by the task `FUN_004204f0` from
+  enemies that called `FUN_004205d0` — every enemy without flag 0x10000, via FUN_00436f00 for zombies); count =
+  DAT_00a3ba4a when DAT_00a3946e < 2 (always: only ever set to 0, FUN_0040d930), DAT_00a39546 when 2. **count = 0
+  and nothing active → DAT_00a39460 = 2: the fight is over** (state handler @0059848c[2] → @005984b0[kind] =
+  FUN_0040ce90 blends the camera back to the stored path). DAT_00a3e768 = 1 → state 6, DAT_00a39470/72 → 7.
+- DAT_00a3ba4a: +1 at zombie set-up (not behaviour 0x1f), −1 when the death starts (FUN_00445660). Flag 0x10000 is
+  set when the death starts — except for the last enemy flagged 0x800000 (spawn param; the first wave has it),
+  which keeps the fight going until its body has sunk (behaviour 7's end sets 0x10000).
+- Event **op 0x43 N** (`FUN_0044f6e0`): the script waits until DAT_00a39546 ≤ N (with DAT_00816f7c and
+  DAT_00a3946d set); at 0 also FUN_004b29d0. Not ported yet (our player logs it as op_43).
+
+## Fight flow in the script (ported 2026-11-23)
+
+- Camera queue `FUN_0040ca70`: each frame runs the current camera function (DAT_00a14a2c); pops the next command
+  only while DAT_00a10c10 is 1 (keep going this frame) or 2 (this one only) — the popped mode handler becomes the
+  camera function. A fight (mode 0x21, `FUN_0040de00`) sets it to 0: **the queue is held for the whole fight**.
+- **Op 0x31 n** (`FUN_0044f390`): back to path mode (FUN_0040e2a0(1, n), DAT_00a39448 = 1), DAT_00a10c10 = 1,
+  pending − 1 → the fight ends and the next camera command runs. **Op 0x33 a n** (`FUN_0044f510`): DAT_00a10c10 = a,
+  pending += n (`2 −1` after a moving fight: take the next fight command now). **Op 0x44 n** (`FUN_0044f760`) /
+  **0x43 n** (`FUN_0044f6e0`): wait until DAT_00a3ba4a (0x44) / DAT_00a39546 (0x43) ≤ n, DAT_00816f7c ≠ 0 and the fight
+  camera is finished (DAT_00a3946d, set when FUN_0040cda0's rule ended the fight and the camera is back); 0x44 also
+  passes when DAT_00816f8c = 1.
+- Fight kinds (FUN_0040e2a0(2, n) → @005983e4[n + 18]; per frame DAT_00a395e0): **4** `FUN_004526f0` holds the
+  camera (DAT_00a39468 = −1, player position = eye − 15 in y); **6** `FUN_00452a30` / **7** `FUN_00452b60` follow
+  the path stored by a flag-2 shot: time +1 a frame (in typing modes, FUN_0047ed90) until the end (6: < end,
+  7: ≤ end), DAT_00a39468 = end − time — so the camera time advances during them and record cues are reached.
+- Typical Stage 1 pattern: `camera path … flag 2` (store), `camera 0x21 [6|7]` (moving fight), `op 0x41 0` (wait
+  for its end), `op 0x33 2 −1`, `camera 0x21 [4]` (held fight), `op 0x44 0`, `op 0x31 3`, next script (spawns for
+  the next part, next camera path). Our player had skipped 0x44 / 0x31 and replayed the stored path after the
+  fight: spawns came too early and moving fights never moved.
+- Zombie behaviours 13 `FUN_00446080` (flags 0x4100: frozen, no word box, until camera time ≥ record +4; get-up
+  0x411, 0xba for skeletons 0xf–0x11; then 15 with distance = (float)u32 record +8, or 1) and 15 `FUN_00446350`
+  (walk — set[2|3], back-off set[4] with flag 0x20000000 — until that distance from the start, then 1).
+- Not ported: the fight camera turning to the active enemies (`FUN_0040d7a0`: look at the first one or two
+  entries of DAT_00a147e0, blend with FUN_0040e2f0), the return blend (FUN_0040ce90), the camera list of mode 0x60
+  (FUN_0040df90 / FUN_0040e4a0), DAT_00816f7c.

@@ -120,18 +120,26 @@ describe.skipIf(!dir)('Stage 1 opening with the ported objects (real data)', () 
     for (const h of s.hits) expect([h.player, h.hit, h.damage]).toEqual([0, 1, 9]);
   });
 
-  it('stand-in: when the fight hold runs out, the fight zombies end, the attack slot is free, their boxes go', () => {
-    const s = loadScene(dir!, 1, 0, 600);
-    let during = 0;
-    for (let f = 0; f < 60 * 50 && !s.player.done; f++) {
+  it('the fight ends when its enemies are dead (FUN_0040cda0), not before — last body sinks first (flag 0x800000)', () => {
+    const s = loadScene(dir!, 1, 0, Infinity);
+    let fightFrames = 0, words: string[] = [], over = -1, lastSunk = -1;
+    for (let f = 0; f < 60 * 70 && over < 0; f++) {
       s.step();
-      if (s.world.inFight) during = Math.max(during, s.objects.filter((o) => o.obj instanceof Zombie && !o.obj.dead).length);
+      if (s.world.inFight) fightFrames++;
+      const shown = s.boxes.boxes.filter((b) => b.shown);
+      if (!words.length && shown.length === 3 && fightFrames > 60 * 20) {
+        words = shown.map((b) => b.word!);
+        s.type(words.join('')); // after 20 s of fighting: no hold ends it any more
+      }
+      const zs = s.objects.map((o) => o.obj).filter((o): o is Zombie => o instanceof Zombie);
+      if (words.length && lastSunk < 0 && zs.length && zs.every((z) => z.dead)) lastSunk = f;
+      if (s.player.log.some((e) => e.text.startsWith('fight over'))) over = f;
     }
-    expect(during).toBe(3);
-    expect(s.player.fightsOver).toBe(1);
-    expect(s.objects.filter((o) => o.obj instanceof Zombie && !o.obj.dead).length).toBe(0);
-    expect(s.world.attackSlots[0]).toBe(0);
-    expect(s.boxes.boxes.length).toBe(0);
+    expect(fightFrames).toBeGreaterThan(60 * 20);
+    expect(over).toBeGreaterThan(0);
+    expect(lastSunk).toBeGreaterThan(0);
+    expect(over - lastSunk).toBeLessThanOrEqual(2); // ends right after the last body is gone
+    expect([s.world.attackers, s.world.enemies]).toEqual([0, 0]);
   });
 
   it('typing the first wave: first key targets, letters hide, words kill — death motions, sink, enemies 3 → 0', () => {
@@ -191,6 +199,46 @@ describe.skipIf(!dir)('Stage 1 opening with the ported objects (real data)', () 
       }
     }
     expect(step).toBe(4);
+  });
+
+  it('third wave (block 1): one zombie, then op 0x44/0x31, two rise at camera times 265 / 304 in moving fight 6', () => {
+    const s = loadScene(dir!, 1, 1, Infinity);
+    let busy = 0;
+    const rose: { t: number; fight?: number }[] = [];
+    const spawned: number[] = [];
+    const seen = new Set<Zombie>();
+    for (let f = 0; f < 1300 && !s.player.done; f++) {
+      s.step();
+      if (busy > 0) busy--;
+      if (s.world.inFight && s.world.targets[0] === -1 && !busy) {
+        const b = s.boxes.boxes.find((x) => x.shown && x.typed === 0);
+        if (b) {
+          s.type(b.word!);
+          busy = b.word!.length + 2;
+        }
+      }
+      for (const o of s.objects) {
+        const z = o.obj;
+        if (!(z instanceof Zombie) || z.skeleton !== 8 || seen.has(z)) continue;
+        if (z.behaviour === 13 && !spawned.includes(f)) spawned.push(f);
+        const box = s.boxes.boxes.find((b) => b.owner === z);
+        if (z.behaviour === 13 && z.state === 1) expect(box?.shown ?? false).toBe(false); // lying: no word box
+        if (z.behaviour === 13 && z.state === 2) {
+          rose.push({ t: s.world.camTime, fight: s.player.shot?.fightKind });
+          seen.add(z);
+        }
+      }
+    }
+    const ops = s.player.log.map((e) => e.text);
+    const firstFightOver = s.player.log.find((e) => e.text.startsWith('fight ends') && e.frame > 400)!.frame;
+    expect(Math.min(...spawned)).toBeGreaterThanOrEqual(firstFightOver); // spawned after the first zombie
+    expect(rose.length).toBe(2);
+    expect(rose[0]!.t).toBeGreaterThanOrEqual(265); // record cues: camera time 265 and 304
+    expect(rose[0]!.t).toBeLessThanOrEqual(267);
+    expect(rose[1]!.t).toBeGreaterThanOrEqual(304);
+    expect(rose[1]!.t).toBeLessThanOrEqual(306);
+    expect(rose.every((r) => r.fight === 6 && r.t >= 265)).toBe(true);
+    expect(ops.some((t) => t.startsWith('camera path 52, time 306'))).toBe(true); // the stage moves on
   });
 
   it('word boxes: the first wave gets three category-1 words with different first letters, shown in the fight', () => {

@@ -13,7 +13,8 @@
  * ends — the owner sets `flags`); block order by the exe's rules; skipping a scene (`skip_task` @00423da0: Enter while skippable sets
  * DAT_00a11a14 and ends the running path shot; until 0x2C 0 clears it, 0x30 is not queued, the waits
  * 0x40/0x41/0x42/0x74 pass at once, sounds 0x3A/0x3B are dropped and subtitles end).
- * Approximate (gameplay not ported yet): the fight (camera mode 0x21) lasts `holdFrames`, then the stored path
+ * The fight (camera mode 0x21) lasts until the owner calls `endFight()` (gameplay: FUN_0040cda0's rule) or, in
+ * viewers without gameplay, `holdFrames`; then the stored path
  * resumes; other camera modes (0x11/0x12/0x14/0x60: screen, player state, view, look-at) finish at once and
  * keep the view; game mode 0 and one player are assumed.
  */
@@ -34,8 +35,10 @@ export interface ActiveShot {
   t: number;
   from: number;
   to: number;
-  /** Set while the fight (camera mode 0x21) runs: frames left. */
+  /** Set while the fight (camera mode 0x21) runs: frames left before a viewer without gameplay ends it. */
   fight?: number;
+  /** Fight number (camera mode 0x21 [n]): 6 / 7 move the camera along the stored path, others hold it. */
+  fightKind?: number;
 }
 
 export interface EvtLogEntry {
@@ -51,8 +54,10 @@ export interface EvtPlayerOptions {
   dialogue: (id: number) => Speech | undefined;
   /** Shared comevtbl, to resolve pointers into it. */
   common?: EventFile;
-  /** Frames a fight (camera mode 0x21) lasts here (gameplay not ported yet). */
+  /** Frames a fight (camera mode 0x21) lasts here when there is no gameplay (viewers); Infinity with gameplay. */
   holdFrames?: number;
+  /** Enemy counts for event ops 0x43 / 0x44 (DAT_00a39546, DAT_00a3ba4a); none = 0 (viewers). */
+  enemyCounts?: () => { enemies: number; attackers: number };
   /** Route choice for branching blocks (index into the rule targets). */
   choice?: number;
   /** Game mode for 0x73 (DAT_00a3e760). */
@@ -65,7 +70,7 @@ export interface EvtPlayerOptions {
 
 export class EventPlayer {
   readonly ef: EventFile;
-  readonly opts: Required<Omit<EvtPlayerOptions, 'common'>> & { common?: EventFile };
+  readonly opts: Required<Omit<EvtPlayerOptions, 'common' | 'enemyCounts'>> & Pick<EvtPlayerOptions, 'common' | 'enemyCounts'>;
   block = 0;
   scriptIndex = 0;
   /** File offset of the next command, or undefined when the block's scripts are done. */
@@ -77,7 +82,11 @@ export class EventPlayer {
   remaining = 0x7fffffff;
   /** Camera commands queued or running (DAT_00a11924). */
   pendingCamera = 0;
-  /** Path stored by a flag-2 shot, resumed after the fight. */
+  /** The fight camera is finished (DAT_00a3946d): set by `endFight()` (or the viewer hold), cleared by a new fight. */
+  fightDone = false;
+  /** Camera queue release (DAT_00a10c10 via op 0x33): 2 = take one more command while a fight holds the queue. */
+  private release = 0;
+  /** Path stored by a flag-2 shot, for a moving fight (6 / 7) to follow. */
   resume?: { pathId: number; from: number; to: number };
   halted = false;
   done = false;
@@ -94,8 +103,6 @@ export class EventPlayer {
   bands: number[][] = [];
   /** Word setup for the next words (op 0x61 → FUN_004b1510(group, time budget)); `count` goes up with each. */
   words = { group: 0, budget: 25, count: 0 };
-  /** Fights ended so far (the hold ran out; until typing is ported the owner ends the fight's enemies). */
-  fightsOver = 0;
   /** Stage area to draw (DAT_00a11124, op 0x29). */
   area = 0;
   /** Sky row (DAT_00a118d4, op 0x1b) and mode (DAT_00a3e764, op 0x1c: 0 off, 1 turning, 2 still). */
@@ -142,6 +149,17 @@ export class EventPlayer {
       if (f && o !== undefined && o + 4 <= f.data.length) return new DataView(f.data.buffer, f.data.byteOffset).getFloat32(o, true);
     }
     return undefined;
+  }
+
+  /**
+   * The fight is over (FUN_0040cda0 found no enemies left): the camera leaves the fight on the next frame.
+   * Owners that run the gameplay pass `holdFrames: Infinity` and call this.
+   */
+  endFight() {
+    if (this.shot?.fight !== undefined && !this.fightDone) {
+      this.fightDone = true;
+      this.add('camera', 'fight over (no enemies left)');
+    }
   }
 
   /** Enter pressed (`skip_task`): skip the scene if it is skippable. Returns whether a skip started. */
@@ -252,6 +270,43 @@ export class EventPlayer {
           advance();
           break;
         }
+        case 0x43:
+        case 0x44: {
+          // FUN_0044f6e0 / FUN_0044f760: yield once, then wait until at most N enemies (0x43: alive DAT_00a39546,
+          // 0x44: not dying DAT_00a3ba4a) and the fight camera is finished (DAT_00a3946d)
+          const n = w(1);
+          if (this.skipping) {
+            this.yieldFlag = false;
+            advance();
+            break;
+          }
+          if (!this.yieldFlag) {
+            this.yieldFlag = true;
+            this.add('flow', `wait until at most ${n} ${op === 0x43 ? 'enemies' : 'enemies fighting'}`);
+            return;
+          }
+          const c = this.opts.enemyCounts?.() ?? { enemies: 0, attackers: 0 };
+          if (!((op === 0x43 ? c.enemies : c.attackers) <= n && this.fightDone)) return;
+          this.yieldFlag = false;
+          advance();
+          break;
+        }
+        case 0x31:
+          // FUN_0044f390: camera back to path mode (camera mode 1) — the fight is over for the camera queue
+          if (this.shot?.fight !== undefined) {
+            this.shot = { ...this.shot, fight: undefined, fightKind: undefined };
+            this.pendingCamera--;
+          }
+          this.add('camera', `fight ends (path mode ${w(1)})`);
+          advance();
+          break;
+        case 0x33:
+          // FUN_0044f510: DAT_00a10c10 = a, DAT_00a11924 += n
+          this.release = w(1);
+          this.pendingCamera += w(2);
+          this.add('camera', `camera queue: release ${w(1)}, pending ${w(2) >= 0 ? '+' : ''}${w(2)}`);
+          advance();
+          break;
         case 0x41: {
           // FUN_0044f5e0: reached mid-frame → yield once; later frames check the condition
           const n = w(1);
@@ -459,20 +514,23 @@ export class EventPlayer {
     for (let guard = 0; guard < 64; guard++) {
       const s = this.shot;
       if (s && s.fight !== undefined) {
-        if (--s.fight > 0) return;
-        this.add('camera', 'fight over' + (this.resume ? ` → resume path ${this.resume.pathId}` : ''));
-        this.fightsOver++;
-        this.pendingCamera--;
-        s.fight = undefined;
-        if (this.resume) {
-          const r = this.resume;
-          this.resume = undefined;
-          this.shot = { pathId: r.pathId, from: r.from, to: r.to, t: r.from };
-          this.counter = r.from;
-          this.running = true;
-          this.ownsCount = false;
-        } else this.running = false;
-        continue;
+        // Moving fights (FUN_00452a30 / FUN_00452b60): the stored path's time advances by one a frame
+        if (s.fightKind === 6 || s.fightKind === 7) {
+          if (s.fightKind === 6 ? s.t < s.to : s.t <= s.to) s.t++;
+          this.timer = s.t;
+          this.remaining = s.to - s.t;
+        } else this.remaining = -1; // FUN_004526f0: DAT_00a39468 = −1
+        if (--s.fight <= 0) this.endFight(); // viewers without gameplay
+        // the queue stays held (DAT_00a10c10 = 0) unless op 0x33 released one command
+        if (this.release !== 2 || !this.queue.length) return;
+        this.release = 0;
+        const c = this.queue.shift()!;
+        if (c.mode !== 0x21) {
+          this.queue.unshift(c);
+          return;
+        }
+        this.startFight(c.params[0]!);
+        return;
       }
       if (s && this.running) {
         // FUN_0040dcd0: time = counter; sample; remaining = end − counter; done when end ≤ counter; counter++
@@ -513,15 +571,30 @@ export class EventPlayer {
         continue;
       }
       if (c.mode === 0x21) {
-        this.shot = { ...(this.shot ?? { pathId: -1, from: 0, to: 0, t: 0 }), fight: this.opts.holdFrames };
-        this.running = false;
-        this.add('camera', `fight ${c.params[0]} — enemies attack (gameplay not ported yet; holding ${(this.opts.holdFrames / 60).toFixed(0)} s)`);
+        this.startFight(c.params[0]!);
         return;
       }
       this.pendingCamera--;
       const what = { 0x11: 'screen/effect', 0x12: 'player state', 0x14: 'view player', 0x60: 'look-at set-up' }[c.mode] ?? 'not decoded yet';
       this.add('camera', `camera mode 0x${c.mode.toString(16)} [${c.params.join(', ')}] (${what})`);
     }
+  }
+
+  /** Camera mode 0x21 [n] (FUN_0040de00): the fight holds the camera queue until op 0x31; 6 / 7 follow the path. */
+  private startFight(n: number) {
+    const base = this.shot ?? { pathId: -1, from: 0, to: 0, t: 0 };
+    const r = this.resume;
+    if ((n === 6 || n === 7) && r) {
+      this.resume = undefined;
+      this.shot = { pathId: r.pathId, from: r.from, to: r.to, t: r.from, fight: this.opts.holdFrames, fightKind: n };
+    } else this.shot = { ...base, fight: this.opts.holdFrames, fightKind: n };
+    this.running = false;
+    this.fightDone = false;
+    this.release = 0;
+    // DAT_00a39468 (shot time left, op 0x41 0): the path's remainder for moving fights, −1 for held ones
+    this.remaining = this.shot.fightKind === 6 || this.shot.fightKind === 7 ? this.shot.to - this.shot.t : -1;
+    const how = n === 6 || n === 7 ? 'moving along the stored path' : 'camera held';
+    this.add('camera', `fight ${n} (${how}) — ` + (Number.isFinite(this.opts.holdFrames) ? `held ${(this.opts.holdFrames / 60).toFixed(0)} s (no gameplay here)` : 'until its enemies are dead'));
   }
 
   private countdown = 0;

@@ -379,3 +379,26 @@ assumed).
 **Fix (user: Esc should cancel the current word, not quit):** the exe maps Esc to key ')' which drops the target
 — ported: Esc with a target cancels it (the word starts again, another zombie can be picked); Esc with nothing to
 cancel still leaves PLAY. Test: cancel resets the word and the next key picks another box.
+
+### 10c (part 3) — Fights end when their enemies are dead (2026-11-23) ✅ verified by user 2026-11-23
+**Delivered:** the 10 s hold is gone from PLAY: a fight lasts until its enemies are dead, by the exe's rule
+(FUN_0040cda0: no enemy left that is not dying and none registered this frame — the last first-wave zombie keeps
+the fight going until its body has sunk). Then the camera returns to the script's path. The stand-in that removed
+leftover zombies is removed. Viewers without gameplay (Stage view) still hold fights for a few seconds.
+**Verified:** tests — no hold ends a fight (20 s without typing), typing the first wave ends it right after the last
+body is gone, counts back to 0; a typing bot through blocks 0–2; PLAY: type the first wave → the street empties and
+the camera moves on to the library fight.
+**Notes:** fights whose enemies are not ported yet (types 0x20, 0x31, 0x44, …) end at once; op 0x43 (wait for at
+most N enemies) not ported; the player cannot be hurt yet (10d).
+
+### 10c (part 4) — The script's fight flow (2026-11-23) ✅ verified by user 2026-11-23
+**Delivered (user: third wave showed 3 boxes for 1 zombie; after the first kill it stopped):** the event player now
+runs fights like the exe: a fight holds the camera queue; event op 0x44/0x43 wait until the enemies are dead and the
+fight camera is done; op 0x31 ends the fight; op 0x33 releases the queue; fights 6 and 7 move the camera along the
+stored path (camera time advances), fight 4 holds it. Zombie behaviours 13 (lie hidden without a word box until a
+camera time, get up) and 15 (walk a set distance). Result: the third wave shows one zombie; after it dies the camera
+moves on and the two others get up and come at you, as in the original.
+**Verified:** tests — the third-wave sequence (spawn after the first fight, no boxes while lying, rise at camera
+times 265 / 304 during moving fight 6, the stage moves on); a typing bot through blocks 0–2; PLAY with an in-page
+bot: one zombie + one box, then the two risen zombies with their boxes, then path 53.
+**Not yet:** the fight camera turning towards the enemies, the camera's return blend, mode 0x60 camera lists.

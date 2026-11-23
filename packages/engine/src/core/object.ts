@@ -88,6 +88,10 @@ export interface World {
   camYaw: number;
   /** Live enemies (DAT_00a39546): +1 at set-up, −1 when the death motion ends. */
   enemies: number;
+  /** Enemies not yet dying (DAT_00a3ba4a): +1 at set-up, −1 when the death starts (FUN_00445660). */
+  attackers: number;
+  /** Enemies that registered this frame (FUN_004205d0 → the table DAT_00a147e0): those without flag 0x10000. */
+  active: number;
 }
 
 export interface GameObject {
@@ -95,11 +99,6 @@ export interface GameObject {
   update(w: World): void;
   /** What to draw this frame. */
   draw(w: World): DrawItem[];
-  /**
-   * The fight hold ran out — stand-in until typing ends fights: the player would have shot the fight's
-   * enemies, so enemies taking part end themselves.
-   */
-  fightOver?(w: World): void;
   /** Set when the task ends (FUN_004bec90). */
   dead?: boolean;
 }

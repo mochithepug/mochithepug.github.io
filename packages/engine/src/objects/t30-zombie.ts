@@ -8,6 +8,8 @@
  * towards them; within the near band → 2), 2 `FUN_00444770` (stand facing the player; when the player's attack
  * slot is free take it → 3; too close → 4), 3 `FUN_00444ac0` (pick an attack, walk in, swing, hit on the row's
  * frame) and 4 `FUN_00444ce0` (back off past the near band, free the slot → 2). Others hold still.
+ * Behaviours 13 `FUN_00446080` (lie frozen with no word box — flags 0x4100 — until a camera time, get up with 0x411,
+ * then 15 or 1) and 15 `FUN_00446350` (walk a set distance, then 1).
  * Typed letters (FUN_004b32f0 → FUN_00442f30): each correct letter hits a body part (FUN_004b3a60) and shows the
  * impact effect (FUN_004430d0 → FUN_00411bc0 / FUN_00411ae0); the finished word kills: behaviour 6
  * `FUN_00443d70` (death motion by direction, FUN_00445320; attack slot freed) → 7 `FUN_00443f70` (sinks 0.04 a
@@ -89,6 +91,9 @@ export class Zombie implements GameObject, WordOwner {
   private sparks: { part: number; frame: number }[] = [];
   /** Sink timer of behaviour 7 (+0x1334). */
   private sinkTimer = 0;
+  /** Behaviour 15: distance to walk (+0x1374) and where it started (+0x13c4). */
+  private walkDistance = 0;
+  private walkStart: Vec3 = [0, 0, 0];
   private readonly tail?: Uint8Array;
   private items: DrawItem[] = [];
 
@@ -103,7 +108,8 @@ export class Zombie implements GameObject, WordOwner {
     this.place = { pos: [...(rec.pos ?? [0, 0, 0])], angles: [...(rec.angles ?? [0, 0, 0])] };
     this.rig = new CharacterRig(w.skeletons[this.skeleton]!, this.skeleton, 0x3f5, w.motions, w.skins[this.skeleton]);
     this.rig.order = 1; // obj +0x200 = 1: rotX, rotZ, rotY
-    w.enemies++; // FUN_00441d80: DAT_00a39546 + 1
+    w.enemies++; // FUN_00441d80: DAT_00a39546 + 1, DAT_00a3ba4a + 1 (not for behaviour 0x1f)
+    if (this.behaviour !== 0x1f) w.attackers++;
   }
 
   /** Parts by pair (@005ea9fc): head, arms, legs. */
@@ -171,8 +177,11 @@ export class Zombie implements GameObject, WordOwner {
     if (this.state === 1) {
       this.flags = (this.flags | 0x22000) >>> 0;
       this.flags2 = ((this.flags2 & ~0x200) | 0x60000000) >>> 0;
-      this.releaseAttack(w); // FUN_004456a0 → FUN_00445620
-      this.flags = (this.flags | 0x10000) >>> 0;
+      // FUN_004456a0: attack slot freed; leaves the active table (flag 0x10000) unless it is the last enemy and
+      // flagged 0x800000 (then the fight waits for its body); DAT_00a3ba4a − 1 (FUN_00445660)
+      this.releaseAttack(w);
+      if (!(this.flags & 0x800000) || w.attackers !== 1) this.flags = (this.flags | 0x10000) >>> 0;
+      w.attackers--;
       this.state = 2;
       this.flags2 &= ~0x10000;
     }
@@ -196,7 +205,10 @@ export class Zombie implements GameObject, WordOwner {
       this.state = 1;
     }
     this.place.pos[1] = f32(this.place.pos[1] - f32(0.04));
-    if (--this.sinkTimer < 1) this.dead = true;
+    if (--this.sinkTimer < 1) {
+      this.flags = (this.flags | 0x10000) >>> 0;
+      this.dead = true;
+    }
   }
 
   private i32(o: number) {
@@ -216,6 +228,8 @@ export class Zombie implements GameObject, WordOwner {
     else if (this.behaviour === 2) this.stand(w);
     else if (this.behaviour === 3) this.attack(w);
     else if (this.behaviour === 4) this.backOff(w);
+    else if (this.behaviour === 13) this.riseUp(w);
+    else if (this.behaviour === 15) this.walkDistanceThenApproach(w);
     else if (this.behaviour === 6) this.die(w);
     else if (this.behaviour === 7) this.sink();
     for (let k = 0; k < 3; k++) this.place.pos[k] = f32(this.place.pos[k]! + this.vel[k]!);
@@ -229,15 +243,8 @@ export class Zombie implements GameObject, WordOwner {
       this.worldAnchor = [world[0], f32(world[1] + 4), world[2]];
     }
     this.drawSparks(w);
+    if (!(this.flags & 0x10000) && !this.dead) w.active++; // FUN_00436f00 → FUN_004205d0
     if (!(this.flags & 0x4000)) this.rig.counter++;
-  }
-
-  /** Stand-in for being shot when the fight hold runs out: if taking part (not still waiting for its cue). */
-  fightOver(w: World) {
-    if (this.behaviour === 18 || this.behaviour === 26 || this.behaviour === 6 || this.behaviour === 7) return;
-    if (this.hp !== 0) w.enemies--;
-    this.releaseAttack(w);
-    this.dead = true;
   }
 
   /** Approach band row (obj +0x1323, set in FUN_00441d80). */
@@ -395,6 +402,54 @@ export class Zombie implements GameObject, WordOwner {
       this.flags = (this.flags & ~0x20000000) >>> 0;
       this.releaseAttack(w);
       this.behaviour = 2;
+      this.state = 0;
+    }
+  }
+
+  /** Behaviour 13 (FUN_00446080): frozen and box-less until camera time i32(+4), then the get-up motion. */
+  private riseUp(w: World) {
+    const r = this.rig;
+    if (this.state === 0) {
+      this.flags = (this.flags | 0x4100) >>> 0;
+      r.play(this.skeleton >= 0xf && this.skeleton <= 0x11 ? 0xba : 0x411);
+      this.state = 1;
+    }
+    if (this.state === 1) {
+      if (w.camTime < (this.i32(4) >>> 0)) return;
+      this.state = 2;
+      this.flags = (this.flags & ~0x4100) >>> 0;
+    }
+    // (motion 0xba: dust at frames 0x15 / 0x1b — FUN_00412010, not ported)
+    if (r.frame >= w.motions.frames(r.motion) - 1) {
+      if (((this.tail?.[3] ?? 0) << 24) >> 24 === 0x0f) {
+        this.walkDistance = f32(this.i32(8) >>> 0);
+        this.behaviour = 0x0f;
+        this.state = 1;
+      } else {
+        this.behaviour = 1;
+        this.state = 0;
+      }
+    }
+  }
+
+  /** Behaviour 15 (FUN_00446350): walk until `walkDistance` from where it started, then approach (1). */
+  private walkDistanceThenApproach(w: World) {
+    if (this.state === 0) {
+      this.walkDistance = f32(this.i32(4) >>> 0);
+      this.state = 1;
+    }
+    if (this.state === 1) {
+      this.state = 2;
+      this.walkStart = [...this.place.pos];
+    }
+    const set = w.motionSet(this.skeleton, this.kind);
+    const m = set ? (this.flags & 0x20000000 ? set[4]! : set[2 + ((this.flags >>> 27) & 1)]!) : this.rig.motion;
+    const start = w.rand();
+    this.setMotion(m, start % w.motions.frames(m), 5);
+    const d = f32(Math.hypot(this.walkStart[2] - this.place.pos[2], this.walkStart[0] - this.place.pos[0]));
+    if (this.walkDistance <= d) {
+      this.spot = [...this.place.pos];
+      this.behaviour = 1; // (flag 0x20000000: FUN_004444e0, not ported)
       this.state = 0;
     }
   }

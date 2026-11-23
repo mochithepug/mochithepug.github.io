@@ -53,7 +53,7 @@ export function loadScene(dir: string, stage = 1, block = 0, holdFrames = 60) {
       return cache.get(key) ?? undefined;
     },
   };
-  const player = new EventPlayer(ef, { rules: readBlockRules(pe, stage - 1), dialogue: (id) => readDialogue(pe, id, 0), common, followBlocks: false, holdFrames });
+  const player = new EventPlayer(ef, { rules: readBlockRules(pe, stage - 1), dialogue: (id) => readDialogue(pe, id, 0), common, followBlocks: false, holdFrames, enemyCounts: () => ({ enemies: world.enemies, attackers: world.attackers }) });
   player.bands = readApproachBands(pe);
   const rng = new CrtRand();
   const hits: { frame: number; player: number; hit: number; damage: number }[] = [];
@@ -86,6 +86,8 @@ export function loadScene(dir: string, stage = 1, block = 0, holdFrames = 60) {
     targets: [-1, -1],
     camYaw: 0,
     enemies: 0,
+    attackers: 0,
+    active: 0,
   };
   const keys: string[] = [];
   const deck = new WordDeck(pe, (name) => {
@@ -95,7 +97,7 @@ export function loadScene(dir: string, stage = 1, block = 0, holdFrames = 60) {
   world.words = deck;
   const boxes = new WordBoxes(pe, deck);
   const objects: { obj: GameObject; type: number }[] = [];
-  let spawned = 0, fightsOver = 0;
+  let spawned = 0;
   player.start(block);
   return {
     pe,
@@ -132,9 +134,11 @@ export function loadScene(dir: string, stage = 1, block = 0, holdFrames = 60) {
           boxes.add(obj, rec.type);
         }
       }
-      for (; fightsOver < player.fightsOver; fightsOver++) for (const o of objects) if (!o.obj.dead) o.obj.fightOver?.(world);
+      world.active = 0;
       for (const o of objects) if (!o.obj.dead) o.obj.update(world);
       boxes.update(world);
+      // FUN_0040cda0: the fight is over once no enemy is left (not dying, nothing registered)
+      if (world.inFight && world.attackers === 0 && world.active === 0) player.endFight();
       world.frame++;
     },
   };
