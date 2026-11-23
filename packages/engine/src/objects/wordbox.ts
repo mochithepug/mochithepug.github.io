@@ -5,10 +5,15 @@
  * `tod_boxetc` models (FUN_004b01a0) coloured by danger (distance), the word in yellow and the line to type in
  * white (FUN_004b0890, letters FUN_004b2530). Everything is in game view space, drawn at one tenth of the
  * anchor (the screen position is unchanged, the box is in front of the scene).
- * One player, not in mode 5 (DAT_00839cb4 = 0). Not ported yet: targeting and typing (FUN_004b3080 /
- * FUN_004b31f0), the red target brackets (FUN_004b07f0), flags 0x200 / 0x100 draws, the 0x800–0x2000 y offsets.
+ * Typing (one player, English rules of the matcher FUN_004013b0: one key per character, upper-cased; a space
+ * may be skipped by typing the character after it): with no target, the first box whose next key matches takes
+ * the key (FUN_004b3080) and becomes the target, then each key goes to the target (FUN_004b31f0 → FUN_004b32f0):
+ * correct → a letter hit on the owner, the last letter → the word is done (owner hp 0) and the target is free;
+ * wrong → a miss. Targeted boxes get the spinning red brackets (FUN_004b07f0 → FUN_004b0530).
+ * Not ported yet: player 2, misses' effects (sound, flash, stats), flags 0x200 / 0x100 draws, the 0x800–0x2000
+ * y offsets, the box's finishing animation (FUN_004b3b30).
  */
-import { asciiToSjis, charMetrics, identity, letterModelId, readWordFlags, scaleLocal, translateLocal, type Mat4, type PeImage } from '@ttotd/formats';
+import { asciiToSjis, charMetrics, identity, letterModelId, readWordFlags, rotateYLocal, rotateZLocal, scaleLocal, translateLocal, type Mat4, type PeImage } from '@ttotd/formats';
 import type { DrawItem, World } from '../core/object.ts';
 import type { WordDeck } from '../core/words.ts';
 
@@ -29,6 +34,10 @@ export interface WordOwner {
   /** Object flags (+0x34). */
   flags: number;
   dead?: boolean;
+  /** A correct letter from `player` reached it (the +0x34 hit bits, part +0x190). */
+  letterHit?(w: World, player: number): void;
+  /** The word is complete (hp 0, dead flag 0x4000000). */
+  wordDone?(w: World, player: number): void;
 }
 
 /** Frame models @005ea738: corners / edges / centre, top to bottom. */
@@ -58,6 +67,10 @@ export class WordBox {
   width = 0;
   /** Queued for drawing this frame (+0x4c & 8). */
   shown = false;
+  /** Player 1 targets this box (+0x4c & 0x20). */
+  targeted = false;
+  /** Wrong keys while targeted (not used by the game logic yet). */
+  misses = 0;
   dead?: boolean;
   private readonly pe: PeImage;
   private readonly deck: WordDeck;
@@ -103,10 +116,50 @@ export class WordBox {
       if (ad > 10) p = f32(f32(ad - 10) * (a[k] <= p ? -1 : 1) + p);
       this.pos[k] = f32(f32(f32(a[k] - p) * f32(1 / 30) + p) * scale);
     }
-    this.alpha = f32(0.45);
+    this.typing(w);
+    this.alpha = f32(this.targeted ? 0.85 : 0.45);
     this.size = 1;
     this.pos[2] = az;
-    this.shown = true;
+    this.shown = this.owner.hp !== 0;
+  }
+
+  /** FUN_004b3080 / FUN_004b31f0 for player 1 with this frame's key. */
+  private typing(w: World) {
+    const key = w.key;
+    if (key !== undefined) {
+      if (w.targets[0] === -1 && this.nextKeyMatches(key)) {
+        w.targets[0] = this.slot;
+        this.type(w, key);
+        w.key = undefined; // one box takes the key (DAT_00839d10)
+      } else if (w.targets[0] === this.slot) {
+        this.type(w, key);
+        w.key = undefined;
+      }
+    }
+    this.targeted = w.targets[0] === this.slot;
+  }
+
+  private nextKeyMatches(key: string): boolean {
+    const t = this.word ?? '';
+    const c = t[this.typed];
+    if (c === undefined) return false;
+    return c.toUpperCase() === key || (c === ' ' && (t[this.typed + 1] ?? '').toUpperCase() === key);
+  }
+
+  /** The English matcher: 0x40 correct (a letter hit), 0x80 complete, 0x10 miss. */
+  private type(w: World, key: string) {
+    const t = this.word ?? '';
+    if (!this.nextKeyMatches(key)) {
+      this.misses++;
+      return;
+    }
+    this.typed += t[this.typed] === ' ' && key !== ' ' ? 2 : 1; // a skipped space
+    this.owner.letterHit?.(w, 0);
+    if (this.typed >= t.length) {
+      w.targets[0] = -1;
+      this.owner.wordDone?.(w, 0);
+      this.deck.release(this.slot); // FUN_004b23e0
+    }
   }
 
   /** FUN_004b0c90 → items in game view space (`toWorld` turns them into world matrices). */
@@ -116,6 +169,7 @@ export class WordBox {
     const p = { x: this.pos[0], y: this.pos[1], z: this.pos[2], s: this.size };
     this.frame(p, items, toWorld);
     p.z = f32(p.z + 0.01);
+    if (this.targeted) this.brackets(p, items, toWorld);
     const { centre } = lineMetrics(this.pe, this.word);
     const n = [...this.word].length;
     const x0 = p.x, y0 = p.y, s = p.s;
@@ -172,6 +226,17 @@ export class WordBox {
     piece(FRAME.bl, left, y, 0.25, 0.25);
     piece(FRAME.b, mid, y, f32((w - 1) * 0.5 - 0.03), 0.25);
     piece(FRAME.br, right, y, 0.25, 0.25);
+  }
+
+  /** FUN_004b07f0 → FUN_004b0530: four bracket models 0x1ccb at the corners, spinning (frame × 1092), red. */
+  private brackets(p: { x: number; y: number; z: number; s: number }, items: DrawItem[], toWorld: (m: Mat4) => Mat4) {
+    const hw = f32(f32(this.width + 0.2) * p.s * 0.5), h = f32(p.s * f32(2.1)), sc = f32(p.s * f32(0.075));
+    const spin = (this.frameCounter * 1092) | 0;
+    for (const [sx, sy, rz] of [[-1, 1, 0xa000], [-1, -1, 0xe000], [1, 1, 0x6000], [1, -1, 0x2000]] as const) {
+      let m = translateLocal(identity(), f32(p.x + sx * hw) * K, f32(p.y + sy * h) * K, p.z * K);
+      m = scaleLocal(rotateYLocal(rotateZLocal(m, rz), spin), sc, sc, sc);
+      items.push({ model: 0x1ccb, world: toWorld(m), color: [1, 0, 0], overlay: true });
+    }
   }
 
   /** Set by the owner of the box list each frame (g_rng_counter for the blink, DAT_00a11a10). */
@@ -232,6 +297,9 @@ export function separateBoxes(boxes: WordBox[], projScale: number) {
   });
 }
 
+/** Key code the exe gives Esc (scan code 1 → ')' in the key table @008479f0): cancels the target. */
+export const CANCEL_KEY = ')';
+
 const isWordOwner = (o: unknown): o is WordOwner => typeof o === 'object' && o !== null && 'wordFlags' in o;
 
 /** All word boxes: created with their owners (spawn_record), updated after the objects, drawn last. */
@@ -263,6 +331,14 @@ export class WordBoxes {
 
   update(w: World) {
     this.deck.tick(w.frame);
+    // FUN_004b2a30: key ')' — Esc (scan code 1 → @008479f0) — with a target cancels it: the player's buffer is
+    // emptied and the word starts again (FUN_00401310 / FUN_00401ce0; sound 0x3e16a9, FUN_00484d50 not ported).
+    if (w.key === CANCEL_KEY) {
+      const t = this.boxes.find((b) => b.slot === w.targets[0]);
+      if (t) t.typed = 0;
+      w.targets[0] = -1;
+      w.key = undefined;
+    }
     for (const b of this.boxes) b.update(w);
     this.boxes = this.boxes.filter((b) => !b.dead);
   }

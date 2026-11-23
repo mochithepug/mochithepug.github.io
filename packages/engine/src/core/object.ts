@@ -80,6 +80,14 @@ export interface World {
   words?: WordDeck;
   /** Frame a word was last picked (DAT_00839d24). */
   wordPickedFrame: number;
+  /** Key typed this frame by player 1 (DAT_00818015, upper-cased as the English matcher does), if any. */
+  key?: string;
+  /** Each player's target: the owner id (+0x3c) of the word being typed, −1 none (DAT_0083911c). */
+  targets: number[];
+  /** Player camera yaw (DAT_00a149f0), Sega units. */
+  camYaw: number;
+  /** Live enemies (DAT_00a39546): +1 at set-up, −1 when the death motion ends. */
+  enemies: number;
 }
 
 export interface GameObject {

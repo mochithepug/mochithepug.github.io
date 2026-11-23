@@ -363,3 +363,19 @@ category 0's special picks; the frame colour saturates to yellow when lit (open:
 (a leftover first-wave zombie held the attack slot). Removed again once typing ends fights (10c step 3).
 Verified: test (after fight 1: no zombies, slot free, no boxes); screenshot of the library fight: two boxes only,
 the jeans zombie in front as in the user's original screenshot.
+
+### 10c (part 2) — Typing kills zombies (2026-11-23) ✅ verified by user 2026-11-23
+**Delivered:** typing in PLAY: the first key picks the box whose word starts with it (spinning red brackets) and
+types its first letter; letters vanish from the white line as they are typed (case-insensitive; a space can be
+skipped by typing the next character); each letter hits a body part with the impact effect; the last letter kills —
+the zombie plays a death motion chosen by direction, its attack slot and word slot are freed, it sinks for 2 s
+and is removed; the live-enemy count (DAT_00a39546) drops when the death motion ends.
+**Verified:** test — typing the first wave: target + first letter on one key, all three die with death motions
+0x412–0x419, enemies 3 → 0, no boxes or zombies left; PLAY screenshots: brackets on "D2" with "2" left, the three
+falling, then gone.
+**Not yet:** the fight ending on zero enemies (still the 10 s hold — step 3), player 2, misses' effects, hit
+flinches and part loss, blood, score, voices; the impact effect's part radius (taken as 0) and size flag (×0.3
+assumed).
+**Fix (user: Esc should cancel the current word, not quit):** the exe maps Esc to key ')' which drops the target
+— ported: Esc with a target cancels it (the word starts again, another zombie can be picked); Esc with nothing to
+cancel still leaves PLAY. Test: cancel resets the word and the next key picks another box.

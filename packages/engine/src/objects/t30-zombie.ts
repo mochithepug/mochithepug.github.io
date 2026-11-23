@@ -8,11 +8,17 @@
  * towards them; within the near band → 2), 2 `FUN_00444770` (stand facing the player; when the player's attack
  * slot is free take it → 3; too close → 4), 3 `FUN_00444ac0` (pick an attack, walk in, swing, hit on the row's
  * frame) and 4 `FUN_00444ce0` (back off past the near band, free the slot → 2). Others hold still.
+ * Typed letters (FUN_004b32f0 → FUN_00442f30): each correct letter hits a body part (FUN_004b3a60) and shows the
+ * impact effect (FUN_004430d0 → FUN_00411bc0 / FUN_00411ae0); the finished word kills: behaviour 6
+ * `FUN_00443d70` (death motion by direction, FUN_00445320; attack slot freed) → 7 `FUN_00443f70` (sinks 0.04 a
+ * frame for 120 frames, then gone); the live-enemy count (DAT_00a39546) drops when the death motion ends.
+ * Not ported: hit flinches of other skeletons, lost arms / part models, blood and score (FUN_00411df0), voices,
+ * the corpse twitch (FUN_00443e50).
  * One-player rules only. Not ported: the off-screen attacker lock (FUN_00436fa0 / DAT_00a11a78), lost arms
  * (FUN_00444970), the attack cool-down (+0x1340 / +0x136c), being hit, word box, head turning to the player
  * (FUN_00442c60), special part models (FUN_00442510), kind-6 effects, groans and other sounds.
  */
-import { transformDir, transformPoint, type SpawnRecord } from '@ttotd/formats';
+import { identity, invert, mul, scaleLocal, transformDir, transformPoint, translateLocal, type SpawnRecord } from '@ttotd/formats';
 import { rotationMatrix, toAngle } from '../core/angles.ts';
 import type { DrawItem, GameObject, World } from '../core/object.ts';
 import type { WordOwner } from './wordbox.ts';
@@ -76,6 +82,13 @@ export class Zombie implements GameObject, WordOwner {
   private attackPoint: Vec3 = [0, 0, 0];
   /** Back-off frames (+0x1338). */
   private backTimer = 0;
+  /** Body part hit per player (+0x190), parts already hit (+0x284 + part·0x90, bit 0x100). */
+  private hitPart = [0, 0];
+  private partsHit = new Set<number>();
+  /** Impact effects (FUN_00411ae0 tasks): body part, frame 0–24. */
+  private sparks: { part: number; frame: number }[] = [];
+  /** Sink timer of behaviour 7 (+0x1334). */
+  private sinkTimer = 0;
   private readonly tail?: Uint8Array;
   private items: DrawItem[] = [];
 
@@ -90,6 +103,100 @@ export class Zombie implements GameObject, WordOwner {
     this.place = { pos: [...(rec.pos ?? [0, 0, 0])], angles: [...(rec.angles ?? [0, 0, 0])] };
     this.rig = new CharacterRig(w.skeletons[this.skeleton]!, this.skeleton, 0x3f5, w.motions, w.skins[this.skeleton]);
     this.rig.order = 1; // obj +0x200 = 1: rotX, rotZ, rotY
+    w.enemies++; // FUN_00441d80: DAT_00a39546 + 1
+  }
+
+  /** Parts by pair (@005ea9fc): head, arms, legs. */
+  private static readonly PART_PAIRS = [[2, 1], [3, 4], [6, 7], [10, 11], [13, 14]] as const;
+
+  /** FUN_004b32f0 (word flag 1 branch) for a correct letter: hit bits, part (FUN_004b3a60). */
+  letterHit(w: World, player: number) {
+    this.flags = (this.flags | (1 << (player + 1)) | 0x1008) >>> 0;
+    const pair = Zombie.PART_PAIRS[w.rand() % (this.kind === 4 ? 3 : 5)]!;
+    let i = 1;
+    while (i > 0 && this.partsHit.has(pair[i]!)) i--;
+    this.partsHit.add(pair[i]!);
+    this.hitPart[player] = pair[i]!;
+  }
+
+  /** The word is complete: head hit, hp 0, dead flag. */
+  wordDone(_w: World, player: number) {
+    this.hitPart[player] = 2;
+    this.hp = 0;
+    this.flags = ((this.flags & ~0x1001) | 0x4000000) >>> 0;
+  }
+
+  /** FUN_00442f30 (with FUN_00436750): process this frame's hits; a dead flag starts the death. */
+  private takeHits(w: World) {
+    if (!(this.flags & 8)) return;
+    const shots = [0, 1].map((p) => (this.flags & (1 << (p + 1)) ? this.hitPart[p]! : 0));
+    this.flags = (this.flags & ~(8 | 2 | 4)) >>> 0;
+    if (this.flags & 0x100) return;
+    for (const part of shots) {
+      if (part <= 0) continue;
+      this.flags2 &= ~0x400;
+      this.sparks.push({ part, frame: 0 }); // FUN_004430d0 weapon 1 → FUN_00411bc0(obj, part, 0.75)
+      if (this.flags2 & 0x80000000) continue;
+      if (!(this.flags & 0x4000000)) continue; // FUN_004434a0: nothing more for this skeleton
+      this.flags2 = (this.flags2 | 0x80000000) >>> 0;
+      w.rand(); // death voice choice (FUN_00437ab0), not played
+      if (!(this.flags2 & 0x4000)) {
+        this.state = 0;
+        this.behaviour = this.behaviour === 0x34 || this.flags2 & 0x100000 || this.kind === 5 || this.kind === 6 ? 9 : 6;
+      }
+    }
+  }
+
+  /** FUN_00437410: angle `a` within ±range of `centre`. */
+  private static within(a: number, centre: number, range: number) {
+    const d = (((a - centre) & 0xffff) + 0x8000) % 0x10000 - 0x8000;
+    return Math.abs(d) <= range;
+  }
+
+  /** Behaviour 6 (FUN_00443d70): death motion, then behaviour 7. */
+  private die(w: World) {
+    const r = this.rig;
+    if (this.state === 0) {
+      // FUN_00445320: by the angle between the player's view and the zombie's facing
+      const u = (w.camYaw - this.place.angles[1]) & 0xffff;
+      let m: number | undefined;
+      if (Zombie.within(u, 0x4000, 0x2000)) m = 0x419;
+      if (Zombie.within(u, 0xc000, 0x2000)) m = 0x418;
+      if (Zombie.within(u, 0, 0x2000)) m = [0x412, 0x413, 0x415, 0x417][w.rand() & 3];
+      if (Zombie.within(u, 0x8000, 0x2000)) m = [0x412, 0x416, 0x414, 0x415, 0x416, 0x417][w.rand() % 6];
+      if (m !== undefined) r.blendTo(m, 0, 5);
+      this.flags &= ~0x4000;
+      this.state = 1;
+    }
+    if (this.state === 1) {
+      this.flags = (this.flags | 0x22000) >>> 0;
+      this.flags2 = ((this.flags2 & ~0x200) | 0x60000000) >>> 0;
+      this.releaseAttack(w); // FUN_004456a0 → FUN_00445620
+      this.flags = (this.flags | 0x10000) >>> 0;
+      this.state = 2;
+      this.flags2 &= ~0x10000;
+    }
+    if (r.frame >= w.motions.frames(r.motion) - 1 || this.flags & 0x1000000) {
+      // FUN_00445840
+      this.flags2 &= ~0x60000000;
+      this.flags = ((this.flags & ~0x20001) | 0xc000) >>> 0;
+      w.enemies--; // FUN_00445680
+      r.counter--;
+      this.behaviour = 7;
+      this.state = 0;
+    }
+  }
+
+  /** Behaviour 7 (FUN_00443f70): sink 0.04 a frame for 120 frames, then end. */
+  private sink() {
+    if (this.state === 0) {
+      this.flags2 &= ~0x20000200;
+      this.flags = (this.flags | 0xa0000) >>> 0;
+      this.sinkTimer = 0x78;
+      this.state = 1;
+    }
+    this.place.pos[1] = f32(this.place.pos[1] - f32(0.04));
+    if (--this.sinkTimer < 1) this.dead = true;
   }
 
   private i32(o: number) {
@@ -102,12 +209,15 @@ export class Zombie implements GameObject, WordOwner {
   }
 
   update(w: World) {
+    this.takeHits(w);
     if (this.behaviour === 18) this.waitFor(w);
     else if (this.behaviour === 26) this.leap(w);
     else if (this.behaviour === 1) this.approach(w);
     else if (this.behaviour === 2) this.stand(w);
     else if (this.behaviour === 3) this.attack(w);
     else if (this.behaviour === 4) this.backOff(w);
+    else if (this.behaviour === 6) this.die(w);
+    else if (this.behaviour === 7) this.sink();
     for (let k = 0; k < 3; k++) this.place.pos[k] = f32(this.place.pos[k]! + this.vel[k]!);
     this.rig.pose(this.place);
     this.items = this.rig.draw();
@@ -118,12 +228,14 @@ export class Zombie implements GameObject, WordOwner {
       this.anchor = transformPoint(w.view, world) as Vec3;
       this.worldAnchor = [world[0], f32(world[1] + 4), world[2]];
     }
+    this.drawSparks(w);
     if (!(this.flags & 0x4000)) this.rig.counter++;
   }
 
   /** Stand-in for being shot when the fight hold runs out: if taking part (not still waiting for its cue). */
   fightOver(w: World) {
-    if (this.behaviour === 18 || this.behaviour === 26) return;
+    if (this.behaviour === 18 || this.behaviour === 26 || this.behaviour === 6 || this.behaviour === 7) return;
+    if (this.hp !== 0) w.enemies--;
     this.releaseAttack(w);
     this.dead = true;
   }
@@ -370,6 +482,22 @@ export class Zombie implements GameObject, WordOwner {
           this.state = 0;
         }
     }
+  }
+
+  /** FUN_00411ae0: model 0x3a + frame at the hit part, in view space, sized by depth; 25 frames. */
+  private drawSparks(w: World) {
+    if (!this.sparks.length) return;
+    const inv = invert(w.view);
+    for (const s of this.sparks) {
+      const j = this.rig.joints[s.part]?.matrix;
+      if (!j) continue;
+      const [x, y, z] = transformPoint(w.view, [j[12]!, j[13]!, j[14]!]); // part radius (+0x288) taken as 0
+      const k = f32((z < -20 ? 1 : f32(-z * f32(0.0375)) + 0.25) * 0.3 * 0.75); // ×0.3: DAT_005fa150 set (assumed)
+      const local = scaleLocal(translateLocal(identity(), x, y, z), k, k, k);
+      this.items.push({ model: 0x3a + s.frame, world: mul(local, inv) });
+      s.frame++;
+    }
+    this.sparks = this.sparks.filter((s) => s.frame <= 0x18);
   }
 
   draw(): DrawItem[] {

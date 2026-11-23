@@ -83,7 +83,11 @@ export function loadScene(dir: string, stage = 1, block = 0, holdFrames = 60) {
     projScale: 240 * cameraProjection(0x1d3b, 4 / 3)[5]!,
     inFight: false,
     wordPickedFrame: -1,
+    targets: [-1, -1],
+    camYaw: 0,
+    enemies: 0,
   };
+  const keys: string[] = [];
   const deck = new WordDeck(pe, (name) => {
     const f = join(dir, 'word', name);
     return existsSync(f) ? decodeWordList(new Uint8Array(readFileSync(f))) : undefined;
@@ -101,6 +105,8 @@ export function loadScene(dir: string, stage = 1, block = 0, holdFrames = 60) {
     /** Attacks that reached a player (World.hitPlayer). */
     hits,
     boxes,
+    /** Queue keys to type, one per frame (upper-cased like the game). */
+    type: (text: string) => keys.push(...[...text].map((c) => c.toUpperCase())),
     /** Word box draw items (world matrices). */
     boxItems: () => boxes.draw(world, (m) => mul(m, invert(world.view))),
     /** One 60 Hz frame: script, then every object in spawn order. */
@@ -113,9 +119,11 @@ export function loadScene(dir: string, stage = 1, block = 0, holdFrames = 60) {
         const c = cameraFromSample(cam.sample(k, player.shot!.t));
         world.eye = c.eye;
         world.view = cameraView(c);
+        world.camYaw = c.yaw;
       }
       world.inFight = player.shot?.fight !== undefined;
       boxes.applySetup(player.words);
+      world.key = keys.shift();
       for (; spawned < player.spawns.length; spawned++) {
         const rec = player.spawns[spawned]!;
         const obj = createObject(rec, world);

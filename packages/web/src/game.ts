@@ -43,7 +43,7 @@ import {
   type Mat4,
   type PolModel,
 } from '@ttotd/formats';
-import { createObject, CrtRand, OPENING_CAR_MODELS, Sky, TitleCard, WordBoxes, WordDeck, type GameObject, type MotionLib, type World } from '@ttotd/engine';
+import { CANCEL_KEY, createObject, CrtRand, OPENING_CAR_MODELS, Sky, TitleCard, WordBoxes, WordDeck, type GameObject, type MotionLib, type World } from '@ttotd/engine';
 import { Assets } from './assets';
 import type { GameFS } from './ingest/gamefs';
 import { patchedModel } from './gl/patch';
@@ -85,6 +85,8 @@ interface Game {
   view?: { view: Mat4; eye: [number, number, number]; game: Mat4 };
   /** Word boxes of the enemies. */
   boxes: WordBoxes;
+  /** Typed keys waiting for their frame. */
+  keys: string[];
 }
 
 let game: Game | undefined;
@@ -201,6 +203,9 @@ export async function startGame(fs: GameFS, stage = 1, at = 0) {
     projScale: 240 * cameraProjection(0x1d3b, 4 / 3)[5]!,
     inFight: false,
     wordPickedFrame: -1,
+    targets: [-1, -1],
+    camYaw: 0,
+    enemies: 0,
   };
   // Word files the stage's script can ask for (event op 0x61: groups 0 and 2), decoded up front.
   const wordFiles = new Map<string, WordEntry[]>();
@@ -214,7 +219,7 @@ export async function startGame(fs: GameFS, stage = 1, at = 0) {
   const deck = new WordDeck(a.pe, (name) => wordFiles.get(name), rng, stage - 1);
   world.words = deck;
   player.start(0);
-  game = { stage, areas, sky: new Sky(readSkyTable(a.pe)), camFile, camIds: slot.ids, player, world, objects: [], spawned: 0, fightsOver: 0, acc: 0, last: performance.now(), enter: false, bars: 0, boxes: new WordBoxes(a.pe, deck) };
+  game = { stage, areas, sky: new Sky(readSkyTable(a.pe)), camFile, camIds: slot.ids, player, world, objects: [], spawned: 0, fightsOver: 0, acc: 0, last: performance.now(), enter: false, bars: 0, boxes: new WordBoxes(a.pe, deck), keys: [] };
   // debug: the running game for inspection from the console / test scripts
   if (new URLSearchParams(location.search).has('dev')) (window as unknown as { ttotdGame?: Game }).ttotdGame = game;
   for (let i = 0; i < at; i++) {
@@ -293,6 +298,7 @@ function updateCamera(g: Game) {
   const c = cameraFromSample(g.camFile.sample(local, shot!.t));
   const game = cameraView(c);
   g.view = { view: mul(game, D3D_VIEW_FLIP), eye: c.eye, game };
+  g.world.camYaw = c.yaw;
 }
 
 /** Object tasks after the event script, once per frame, in spawn order; the sky task first. */
@@ -307,6 +313,7 @@ function stepObjects(g: Game, enter: boolean) {
   }
   w.inFight = p.shot?.fight !== undefined;
   g.boxes.applySetup(p.words);
+  w.key = g.keys.shift();
   w.camPath = p.shot?.pathId ?? -1;
   w.camTime = p.timer;
   w.enter = enter;
@@ -437,8 +444,12 @@ function setStatus(text: string) {
 
 window.addEventListener('keydown', (e) => {
   if ($('game').hidden) return;
-  if (e.key === 'Escape') quitGame();
+  // Esc cancels the word being typed (the exe's key ')'); with nothing to cancel it leaves PLAY.
+  if (e.key === 'Escape' && game && game.world.targets[0] !== -1) game.keys.push(CANCEL_KEY);
+  else if (e.key === 'Escape') quitGame();
   else if (e.key === 'Enter' && game && !e.repeat) game.enter = true;
+  // Typing: printable keys, one per game frame (the exe reads one key per frame, DAT_00818015)
+  else if (game && e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) game.keys.push(e.key.toUpperCase());
   else return;
   e.preventDefault();
 });

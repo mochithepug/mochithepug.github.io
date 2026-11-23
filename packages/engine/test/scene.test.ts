@@ -134,6 +134,65 @@ describe.skipIf(!dir)('Stage 1 opening with the ported objects (real data)', () 
     expect(s.boxes.boxes.length).toBe(0);
   });
 
+  it('typing the first wave: first key targets, letters hide, words kill — death motions, sink, enemies 3 → 0', () => {
+    const s = loadScene(dir!, 1, 0, 60 * 40);
+    let words: string[] = [];
+    let partly = false;
+    const deaths = new Set<number>();
+    for (let f = 0; f < 60 * 45; f++) {
+      s.step();
+      const shown = s.boxes.boxes.filter((b) => b.shown);
+      if (!words.length && shown.length === 3) {
+        words = shown.map((b) => b.word!);
+        expect(s.world.enemies).toBe(3);
+        s.type(words[0]![0]!); // one key: target + first letter
+      } else if (words.length && !partly) {
+        partly = true;
+        const b = s.boxes.boxes.find((x) => x.word === words[0])!;
+        expect(b.targeted).toBe(true);
+        expect(b.typed).toBe(1);
+        expect(s.world.targets[0]).toBe(b.slot);
+        s.type(words[0]!.slice(1) + words[1] + words[2]);
+      }
+      for (const o of s.objects) if (o.obj instanceof Zombie && o.obj.behaviour === 6) deaths.add(o.obj.rig.motion);
+    }
+    expect(words.length).toBe(3);
+    expect(s.world.enemies).toBe(0);
+    expect(s.world.targets[0]).toBe(-1);
+    expect(s.objects.filter((o) => o.obj instanceof Zombie && !o.obj.dead).length).toBe(0);
+    expect(s.boxes.boxes.length).toBe(0);
+    for (const m of deaths) expect([0x412, 0x413, 0x414, 0x415, 0x416, 0x417, 0x418, 0x419]).toContain(m);
+  });
+
+  it('Esc (key ")") cancels the target: the word starts again and another zombie can be picked', () => {
+    const s = loadScene(dir!, 1, 0, 60 * 40);
+    let step = 0;
+    let words: string[] = [];
+    for (let f = 0; f < 60 * 35 && step < 4; f++) {
+      s.step();
+      const shown = s.boxes.boxes.filter((b) => b.shown);
+      const box = (w: string) => s.boxes.boxes.find((b) => b.word === w)!;
+      if (step === 0 && shown.length === 3) {
+        words = shown.map((b) => b.word!);
+        s.type(words[0]![0]!);
+        step = 1;
+      } else if (step === 1 && box(words[0]!).typed === 1) {
+        s.type(')');
+        step = 2;
+      } else if (step === 2 && s.world.targets[0] === -1) {
+        expect(box(words[0]!).typed).toBe(0);
+        expect(box(words[0]!).targeted).toBe(false);
+        s.type(words[1]![0]!);
+        step = 3;
+      } else if (step === 3 && s.world.targets[0] !== -1) {
+        expect(s.world.targets[0]).toBe(box(words[1]!).slot);
+        expect(box(words[1]!).typed).toBe(1);
+        step = 4;
+      }
+    }
+    expect(step).toBe(4);
+  });
+
   it('word boxes: the first wave gets three category-1 words with different first letters, shown in the fight', () => {
     const s = loadScene(dir!, 1, 0, 60 * 20);
     for (let f = 0; f < 60 * 30; f++) s.step();

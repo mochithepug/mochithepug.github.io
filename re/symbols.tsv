@@ -274,3 +274,18 @@
 004b3bc0	fn	word_box_danger	(distance − 20)·0.025 clamped
 005a2848	data	g_type_word_flags	per object type: word box flags
 0058e410	data	g_word_time_scale	word time option × 0.1
+00401380	fn	type_match	feed a key to the typing buffer (English: FUN_004013b0)
+004b3080	fn	word_box_target	first key picks a box (player target)
+004b31f0	fn	word_box_type	per-frame typing for a targeted box
+004b32f0	fn	word_box_type_key	match result → hits, completion, misses
+004b3a60	fn	pick_hit_part	body part pair @005ea9fc
+00442f30	fn	zombie_take_hits	hit bits → impact, death start
+00436750	fn	collect_hits	shots per player from +0x34 bits
+00411ae0	fn	impact_effect	model 0x3a+n at the hit part, 25 frames
+00443d70	fn	zombie_b6_die	death motion, then behaviour 7
+00445320	fn	zombie_death_motion	by player yaw − zombie yaw
+00445840	fn	zombie_death_end	enemy count − 1, → 7
+00443f70	fn	zombie_b7_sink	sink 120 frames, end
+00445680	fn	enemy_count_dec	DAT_00a39546 − 1 once
+004b0530	fn	word_box_brackets	four spinning bracket models
+0083911c	data	g_player_target	per player: target owner id

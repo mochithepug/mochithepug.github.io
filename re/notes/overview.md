@@ -723,3 +723,40 @@ Characters have extra **skin models** whose vertices follow two joints, filling 
   (FUN_004c2b30) along rotY(0x2000)·rotX(0x2000)·(0,0,1) in view space (FUN_0046d780 → FUN_004c2b70). Drawing at
   one tenth of the view-space anchor keeps the screen position and puts the box in front of the scene.
   DAT_00a11a10 = 240 / tan(fov/2) (FUN_00488260). Specular assumed off (the original's word line is yellow).
+
+## Typing and killing (ported 2026-11-23, one player)
+
+- **Keys**: per player DAT_00818014 + p·0x14 (byte +1 = this frame's key; FUN_00453ee0), one per frame; target per
+  player DAT_0083911c[p] = owner id (+0x3c), −1 none (FUN_00496850 / 00496840).
+- **Matcher** (`FUN_00401380` → `FUN_004013b0` for non-Japanese; DAT_00594070 = 'K' uses FUN_00401bc0): a generic
+  kana-style engine — per character code a key-alternative table @005952f8[code] (low 4 bits = count, flags
+  0x20/0x40/0x80 = kana combining rules, +4 → strings). For the English charset every code has exactly one key,
+  the upper-case character (letters 'A'…, digits, punctuation, space " "), and none of the combining flags; typed
+  keys are upper-cased (FUN_004b4260, language 'A'). Code 0xEA (space) has a skip rule: typing the next
+  character's key accepts both. Result bits: 0x40 correct, 0x80 complete, 0x10 miss.
+- **Targeting** (`FUN_004b3080`): with no target, the box loads its word into the player's buffer (DAT_0087b5e0 +
+  p·0x150) and tries the key; on a match it becomes the target and the key is replayed as the first letter
+  (DAT_00839cac flag 4 → 8). Box +0x4c |= 0x20 (p1) / 0x40 (p2) → brackets; centre alpha 0.85.
+- **Typing** (`FUN_004b31f0` → `FUN_004b32f0`): owner word flag 1 (zombies): each correct letter → owner +0x34 |=
+  1 << (p+1) | 0x1008, hit part +0x190+p = `FUN_004b3a60` (word flag 0x10000000: pair @005ea9fc[rand % 5] = head
+  2/1, arms 3/4 6/7, legs 10/11 13/14; the second unless already hit); complete → target −1, part 2, hp
+  (+0x11c) 0, +0x34 = (& ~0x1001) | 0x4000000, box finish (FUN_004b3b30), letter slot freed (FUN_004b23e0). Miss →
+  sound, flash flag (box +0x4c | 2), stats.
+- **Zombie hits** (`FUN_00442f30` + `FUN_00436750`): flag 8 → per player with a hit bit: shots = part; weapon 1
+  (typing) → impact effect `FUN_00411bc0(obj, part, 0.75)` → task `FUN_00411ae0`: model 0x3a + frame (25 frames)
+  at the part's view position (joint record +0x68, depth + radius +0x78), scale (z < −20 ? 1 : 0.25 − 0.0375z) ·
+  (DAT_005fa150 ? 0.3 : 0.15) · 0.75. Dead flag → +0x1370 |= 0x80000000, blood/score (FUN_00411df0), voice,
+  behaviour 6 (9 for kinds 5/6, behaviour 0x34, flag 0x100000).
+- **Death** behaviour 6 `FUN_00443d70`: `FUN_00445320` by u = player yaw (DAT_00a149f0) − yaw: ±0x2000 around
+  0x4000 → 0x419, 0xC000 → 0x418, 0 → @005a2710[rand & 3] (0x412/0x413/0x415/0x417), 0x8000 → @005a26f8[rand % 6];
+  then flags 0x22000, attack slot freed (FUN_004456a0), DAT_00a3ba4a − 1 (FUN_00445660); at the motion's end
+  `FUN_00445840`: counter − 1, flags | 0xc000 (frozen), **DAT_00a39546 − 1** (FUN_00445680), → 7 (8 for
+  skeletons 0x12 / 3). Behaviour 7 `FUN_00443f70`: 0x78 frames, y −= 0.04 a frame, corpse twitch (FUN_00443e50:
+  counter = random late frame), then the task ends (FUN_00437090).
+- Brackets (`FUN_004b0530`): model 0x1ccb ×4 at (x ± (w + 0.2)·s/2, y ± 2.1·s), rotZ 0xA000 / 0xE000 / 0x6000 /
+  0x2000, rotY = DAT_00a11a48 · 1092, scale 0.075·s, colour (1,0,0) player 1 / (0,0,1) player 2.
+- **Cancel** (user report): at the top of `FUN_004b2a30`, a player with a target whose key this frame is ')' —
+  the code the key table @008479f0 gives **Esc** (scan code 1; filled in FUN_004b7580) — or flag 2 in
+  DAT_00839cb0[p] loses the target: buffer emptied (FUN_00401310), box line reset (FUN_00401ce0(line, 0)),
+  FUN_00484d50(p), sound 0x3e16a9. Port: the targeted word starts again (typed = 0). Our PLAY screen also uses
+  Esc to leave when there is nothing to cancel.
