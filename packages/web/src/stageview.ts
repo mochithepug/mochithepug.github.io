@@ -377,7 +377,7 @@ function stepEvents(e: NonNullable<Ctx['evt']>) {
   const p = e.player;
   p.step();
   for (; e.spawned < p.spawns.length; e.spawned++) if (p.spawns[e.spawned]!.type === 0x60) e.title = new TitleCard();
-  e.title?.update(false);
+  e.title?.tick(false);
   if (e.title?.done) p.flags[TITLE_CARD_FLAG] = 1;
 }
 
@@ -546,7 +546,7 @@ $<HTMLSelectElement>('stg-evt-hold').addEventListener('change', () => {
 
 function spawnColor(r: SpawnRecord): [number, number, number] {
   if (r.type === 0x63) return [0.5, 0.5, 0.5]; // skip_task
-  if (r.type === 0x60) return [0.4, 0.4, 0.6]; // hud_on
+  if (r.type === 0x60) return [0.4, 0.4, 0.6]; // title card
   if (r.type === 0x41) {
     // placed objects: colour by kind range
     if (r.kind >= 0x04 && r.kind <= 0x0b) return [1, 0.3, 0.2]; // enemies

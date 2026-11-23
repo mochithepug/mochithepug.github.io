@@ -114,6 +114,59 @@ export function rotateZLocal(m: Mat4, a: number): Mat4 {
   return o;
 }
 
+/** M' = R(axis, a) · M (FUN_004c2150; the axis is normalised first). */
+export function rotateAxisLocal(m: Mat4, axis: readonly number[], a: number): Mat4 {
+  const n = Math.hypot(axis[0]!, axis[1]!, axis[2]!);
+  const x = axis[0]! / n, y = axis[1]! / n, z = axis[2]! / n;
+  const c = Math.cos(a * ANGLE), s = Math.sin(a * ANGLE), t = 1 - c;
+  const r = identity();
+  r[0] = x * x * t + c; r[1] = y * x * t + z * s; r[2] = z * x * t - y * s;
+  r[4] = y * x * t - z * s; r[5] = y * y * t + c; r[6] = z * y * t + x * s;
+  r[8] = z * x * t + y * s; r[9] = z * y * t - x * s; r[10] = z * z * t + c;
+  return mul(r, m);
+}
+
+/** Point · M (FUN_004c1320). */
+export function transformPoint(m: Mat4, v: readonly number[]): [number, number, number] {
+  return [
+    v[0]! * m[0]! + v[1]! * m[4]! + v[2]! * m[8]! + m[12]!,
+    v[0]! * m[1]! + v[1]! * m[5]! + v[2]! * m[9]! + m[13]!,
+    v[0]! * m[2]! + v[1]! * m[6]! + v[2]! * m[10]! + m[14]!,
+  ];
+}
+
+/** Direction · M, no translation (FUN_004c1390). */
+export function transformDir(m: Mat4, v: readonly number[]): [number, number, number] {
+  return [
+    v[0]! * m[0]! + v[1]! * m[4]! + v[2]! * m[8]!,
+    v[0]! * m[1]! + v[1]! * m[5]! + v[2]! * m[9]!,
+    v[0]! * m[2]! + v[1]! * m[6]! + v[2]! * m[10]!,
+  ];
+}
+
+/** General 4×4 inverse (FUN_004c15c0). */
+export function invert(m: Mat4): Mat4 {
+  const a = Array.from(m, Number), o = new Array<number>(16);
+  o[0] = a[5]! * a[10]! * a[15]! - a[5]! * a[11]! * a[14]! - a[9]! * a[6]! * a[15]! + a[9]! * a[7]! * a[14]! + a[13]! * a[6]! * a[11]! - a[13]! * a[7]! * a[10]!;
+  o[4] = -a[4]! * a[10]! * a[15]! + a[4]! * a[11]! * a[14]! + a[8]! * a[6]! * a[15]! - a[8]! * a[7]! * a[14]! - a[12]! * a[6]! * a[11]! + a[12]! * a[7]! * a[10]!;
+  o[8] = a[4]! * a[9]! * a[15]! - a[4]! * a[11]! * a[13]! - a[8]! * a[5]! * a[15]! + a[8]! * a[7]! * a[13]! + a[12]! * a[5]! * a[11]! - a[12]! * a[7]! * a[9]!;
+  o[12] = -a[4]! * a[9]! * a[14]! + a[4]! * a[10]! * a[13]! + a[8]! * a[5]! * a[14]! - a[8]! * a[6]! * a[13]! - a[12]! * a[5]! * a[10]! + a[12]! * a[6]! * a[9]!;
+  o[1] = -a[1]! * a[10]! * a[15]! + a[1]! * a[11]! * a[14]! + a[9]! * a[2]! * a[15]! - a[9]! * a[3]! * a[14]! - a[13]! * a[2]! * a[11]! + a[13]! * a[3]! * a[10]!;
+  o[5] = a[0]! * a[10]! * a[15]! - a[0]! * a[11]! * a[14]! - a[8]! * a[2]! * a[15]! + a[8]! * a[3]! * a[14]! + a[12]! * a[2]! * a[11]! - a[12]! * a[3]! * a[10]!;
+  o[9] = -a[0]! * a[9]! * a[15]! + a[0]! * a[11]! * a[13]! + a[8]! * a[1]! * a[15]! - a[8]! * a[3]! * a[13]! - a[12]! * a[1]! * a[11]! + a[12]! * a[3]! * a[9]!;
+  o[13] = a[0]! * a[9]! * a[14]! - a[0]! * a[10]! * a[13]! - a[8]! * a[1]! * a[14]! + a[8]! * a[2]! * a[13]! + a[12]! * a[1]! * a[10]! - a[12]! * a[2]! * a[9]!;
+  o[2] = a[1]! * a[6]! * a[15]! - a[1]! * a[7]! * a[14]! - a[5]! * a[2]! * a[15]! + a[5]! * a[3]! * a[14]! + a[13]! * a[2]! * a[7]! - a[13]! * a[3]! * a[6]!;
+  o[6] = -a[0]! * a[6]! * a[15]! + a[0]! * a[7]! * a[14]! + a[4]! * a[2]! * a[15]! - a[4]! * a[3]! * a[14]! - a[12]! * a[2]! * a[7]! + a[12]! * a[3]! * a[6]!;
+  o[10] = a[0]! * a[5]! * a[15]! - a[0]! * a[7]! * a[13]! - a[4]! * a[1]! * a[15]! + a[4]! * a[3]! * a[13]! + a[12]! * a[1]! * a[7]! - a[12]! * a[3]! * a[5]!;
+  o[14] = -a[0]! * a[5]! * a[14]! + a[0]! * a[6]! * a[13]! + a[4]! * a[1]! * a[14]! - a[4]! * a[2]! * a[13]! - a[12]! * a[1]! * a[6]! + a[12]! * a[2]! * a[5]!;
+  o[3] = -a[1]! * a[6]! * a[11]! + a[1]! * a[7]! * a[10]! + a[5]! * a[2]! * a[11]! - a[5]! * a[3]! * a[10]! - a[9]! * a[2]! * a[7]! + a[9]! * a[3]! * a[6]!;
+  o[7] = a[0]! * a[6]! * a[11]! - a[0]! * a[7]! * a[10]! - a[4]! * a[2]! * a[11]! + a[4]! * a[3]! * a[10]! + a[8]! * a[2]! * a[7]! - a[8]! * a[3]! * a[6]!;
+  o[11] = -a[0]! * a[5]! * a[11]! + a[0]! * a[7]! * a[9]! + a[4]! * a[1]! * a[11]! - a[4]! * a[3]! * a[9]! - a[8]! * a[1]! * a[7]! + a[8]! * a[3]! * a[5]!;
+  o[15] = a[0]! * a[5]! * a[10]! - a[0]! * a[6]! * a[9]! - a[4]! * a[1]! * a[10]! + a[4]! * a[2]! * a[9]! + a[8]! * a[1]! * a[6]! - a[8]! * a[2]! * a[5]!;
+  const det = a[0]! * o[0]! + a[1]! * o[4]! + a[2]! * o[8]! + a[3]! * o[12]!;
+  return new Float32Array(o.map((v) => v / det));
+}
+
 /** D3DXMatrixOrthoOffCenterLH (z → [0, 1]). */
 export function orthoOffCenterLH(l: number, r: number, b: number, t: number, zn: number, zf: number): Mat4 {
   return new Float32Array([

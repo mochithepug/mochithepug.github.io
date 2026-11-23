@@ -170,6 +170,14 @@ export class Motion {
   private frame(i: number) {
     return this.base + 4 + Math.min(i, this.stored - 1) * motionStride(this.joints);
   }
+  /** Root position of stored frame i (clamped to the last stored frame). */
+  framePos(i: number): [number, number, number] {
+    return this.pos(i);
+  }
+  /** Angles of joint j in stored frame i. */
+  frameRot(i: number, j: number): [number, number, number] {
+    return this.rot(i, j);
+  }
   private pos(i: number): [number, number, number] {
     const o = this.frame(i);
     return [this.v.getFloat32(o, true), this.v.getFloat32(o + 4, true), this.v.getFloat32(o + 8, true)];

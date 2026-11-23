@@ -87,6 +87,11 @@ export class EventPlayer {
   skippable = false;
   /** Flag bytes DAT_00a396c0[N] that op 0x45 waits for; set by game objects (248: title card over). */
   readonly flags = new Uint8Array(0x400);
+  /** Stage area to draw (DAT_00a11124, op 0x29). */
+  area = 0;
+  /** Sky row (DAT_00a118d4, op 0x1b) and mode (DAT_00a3e764, op 0x1c: 0 off, 1 turning, 2 still). */
+  skyRow = 0;
+  skyMode = 1;
   /** Skipping the current scene (DAT_00a11a14). */
   skipping = false;
   light: SceneLight = { ...DEFAULT_SCENE_LIGHT, color: [...DEFAULT_SCENE_LIGHT.color], fogColor: [...DEFAULT_SCENE_LIGHT.fogColor] };
@@ -298,6 +303,21 @@ export class EventPlayer {
           this.add('light', `light direction pitch ${w(1)} yaw ${w(2)}`);
           advance();
           break;
+        case 0x29:
+          this.area = (w(1) << 16) >> 16;
+          this.add('other', `stage area ${this.area}`);
+          advance();
+          break;
+        case 0x1b:
+          this.skyRow = w(1);
+          this.add('light', `sky row ${this.skyRow}`);
+          advance();
+          break;
+        case 0x1c:
+          this.skyMode = w(1);
+          this.add('light', `sky ${['off', 'on', 'on (still)'][this.skyMode] ?? this.skyMode}`);
+          advance();
+          break;
         case 0x73: {
           const m = w(1), mode = this.opts.gameMode;
           const cont = m < 100 ? m === mode : m - 100 !== mode;
@@ -324,10 +344,15 @@ export class EventPlayer {
         case 0x09:
         case 0x0a:
         case 0x0b: {
+          // 0x03 / 0x07 spawn only with one / two players (FUN_0041fdd0 / FUN_0041fe10, DAT_00a3b844)
+          if ((op === 0x03 && this.opts.players !== 1) || (op === 0x07 && this.opts.players !== 2)) {
+            advance();
+            break;
+          }
           const records = readSpawnRecords(this.ef, this.opts.common, o);
           for (const r of records) {
             this.spawns.push(r);
-            const typeName = r.type === 0x41 ? `placed[${r.kind}]` : r.type === 0x63 ? 'skip_task' : r.type === 0x60 ? 'hud_on' : `type_0x${r.type.toString(16)}`;
+            const typeName = r.type === 0x41 ? `placed[${r.kind}]` : r.type === 0x63 ? 'skip_task' : r.type === 0x60 ? 'title_card' : `type_0x${r.type.toString(16)}`;
             const posStr = r.pos ? ` (${r.pos.map((v) => v.toFixed(0)).join(', ')})` : '';
             const chrStr = r.pos ? ` skel=${r.skeleton} hp=${r.hp}` : '';
             this.add('spawn', `${evtOpName(op)} ${typeName}${chrStr}${posStr}`);

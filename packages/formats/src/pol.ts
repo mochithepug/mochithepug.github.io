@@ -30,6 +30,8 @@ export interface PolPrim {
   smooth: boolean;
   /** 8 floats per vertex, references resolved. */
   vertices: Float32Array;
+  /** Per vertex: byte offset of its 32-byte record from the model start (skins write through these). */
+  sources: Int32Array;
 }
 
 export interface PolMesh {
@@ -137,6 +139,7 @@ export function parsePolModel(file: Uint8Array, offset: number, index = 0): PolM
     const list = (w & 8) !== 0;
     const n = list ? count * 3 : count;
     const verts = new Float32Array(n * 8);
+    const sources = new Int32Array(n);
     for (let k = 0; k < n; k++) {
       let src = p;
       if (w & 0x20) {
@@ -148,9 +151,10 @@ export function parsePolModel(file: Uint8Array, offset: number, index = 0): PolM
         } else p += 32;
       } else p += 32;
       need(src, 32);
+      sources[k] = src - offset;
       for (let c = 0; c < 8; c++) verts[k * 8 + c] = f32(src + c * 4);
     }
-    mesh.prims.push({ flags: w, list, cull, smooth, vertices: verts });
+    mesh.prims.push({ flags: w, list, cull, smooth, vertices: verts, sources });
   }
   if (mesh && p !== meshEnd) throw new PolError(`model ${index}: mesh size mismatch at end (0x${p.toString(16)})`);
   return model;

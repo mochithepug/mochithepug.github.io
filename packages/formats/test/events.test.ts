@@ -90,6 +90,7 @@ describe.skipIf(!dir)('event player (Stage 1 block 0)', async () => {
       if (card >= 0 && p.frame - card >= 0xb4) p.flags[248] = 1;
     }
     expect(p.done).toBe(true);
+    expect([p.area, p.skyRow, p.skyMode]).toEqual([3, 4, 1]); // after block 0: area 3, sky row 4 on
     const held = p.log.find((e) => e.text === 'wait for flag 248')!;
     const path49 = p.log.find((e) => e.text.startsWith('camera path 49'))!;
     expect(path49.frame - held.frame).toBeGreaterThanOrEqual(0xb4 - 25);

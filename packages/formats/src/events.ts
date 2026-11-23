@@ -43,7 +43,7 @@ export const EVT_TERMINATORS = new Set([0x4f, 0x4e, 0x71]);
 export const EVT_OP_NAMES: Record<number, string> = {
   0x03: 'spawn_1p', 0x07: 'spawn_2p', 0x09: 'spawn', 0x0a: 'spawn_b', 0x0b: 'spawn_obj', 0x0e: 'set_slot_xyz', 0x20: 'light_fog', 0x24: 'light_fog_b', 0x21: 'param_c',
   0x25: 'param_d', 0x23: 'light_fog_fade', 0x27: 'param_f', 0x2c: 'skippable', 0x2d: 'say', 0x30: 'camera', 0x41: 'wait_frame',
-  0x42: 'wait_frames', 0x45: 'wait_flag', 0x40: 'wait_camera', 0x38: 'sound', 0x3a: 'sound_b', 0x39: 'sound_repeat', 0x3b: 'sound_repeat_b', 0x18: 'light_dir', 0x19: 'light_dir_b', 0x61: 'screen_mode', 0x49: 'by_players_a', 0x4a: 'by_players_b', 0x4b: 'by_players_c', 0x4d: 'segment_start',
+  0x42: 'wait_frames', 0x45: 'wait_flag', 0x29: 'stage_area', 0x1b: 'sky_row', 0x1c: 'sky_mode', 0x40: 'wait_camera', 0x38: 'sound', 0x3a: 'sound_b', 0x39: 'sound_repeat', 0x3b: 'sound_repeat_b', 0x18: 'light_dir', 0x19: 'light_dir_b', 0x61: 'screen_mode', 0x49: 'by_players_a', 0x4a: 'by_players_b', 0x4b: 'by_players_c', 0x4d: 'segment_start',
   0x4e: 'halt', 0x4f: 'next_script', 0x6c: 'camera_1p', 0x6d: 'camera_2p', 0x71: 'return', 0x72: 'spawn_c',
   0x73: 'branch_mode',
 };
@@ -68,6 +68,11 @@ export interface SpawnRecord {
   skeleton: number;
   /** Source: which file the record came from. */
   source: 'stage' | 'common';
+  /**
+   * The record from +0x24 on (64 bytes or to the end of the file): the per-type parameters objects read
+   * through obj +0x1394 (skeleton, kind, behaviour, motions, camera times, targets…).
+   */
+  tail?: Uint8Array;
 }
 
 /** Decode the spawn records in a positioned (0x09, 0x03, 0x07, 0x0B) or simple (0x0A) command's −1-terminated pointer list. */
@@ -102,6 +107,7 @@ export function readSpawnRecords(ef: EventFile, common: EventFile | undefined, c
         pos: [f(2), f(3), f(4)],
         angles: [w(5), w(6), w(7)],
         hp: dv.getInt16(off + 0x22, true), kind: src.data[off + 0x25]!, skeleton: dv.getInt8(off + 0x24), source,
+        tail: src.data.slice(off + 0x24, Math.min(off + 0x64, src.data.length)),
       });
     } else {
       out.push({

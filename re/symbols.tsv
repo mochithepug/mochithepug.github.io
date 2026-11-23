@@ -204,3 +204,34 @@
 00441d80	fn	enemy30_init	object type 0x30 set-up: motion 0x3f5/0x457, skeleton/kind/behaviour from record +0x24..
 00420050	fn	spawn_record	create one object from a spawn record (also sets +0x1394 = record + 0x24)
 00454d30	fn	placed_object_init	type 0x41: sub-object with task PTR_FUN_005b52d4[kind]
+004742a0	fn	motion_setup	object motion state set-up (obj +0x198): size by skeleton, pose of frame 0
+00474ff0	fn	motion_draw	step the object's motion, pose and draw its skeleton (FUN_00475030)
+00475100	fn	motion_step	frame = counter % (F+1); half frames; blend progress
+00475890	fn	motion_play	hard switch to a motion from frame 0
+00475900	fn	motion_blend_to	switch with a blend of N frames from the current pose
+00474880	fn	motion_root	root position/angles (lerp or blend) then FUN_00474bb0
+00475660	fn	motion_joint	joint transform: rest offset, angles (frame / lerp / blend)
+0040c040	fn	matrix_angles	rotation matrix -> Sega angles (x, y, z)
+004b4330	fn	daemon_init	type 0x22: body skeleton 0x45 + wings sub-object 0x46
+004b6d70	fn	daemon_draw	body, then wings on joint 1
+00446700	fn	zombie_wait	behaviour 18: motion, wait for a camera time, next behaviour
+00447380	fn	zombie_leap	behaviour 26: delay, arc to a target, land
+00437460	fn	launch_arc	velocity/gravity to reach a target (frames to fall from rest)
+00445a40	fn	floor_snap	cast down into stage collision; put the object on the floor
+0048f910	fn	skin_prepare	skin piece set-up: groups, joint matrices, relocated slot lists
+0048fd70	fn	skin_group	move a skin group's vertices by joint * reference^-1
+0048ff30	fn	skin_draw	draw the skin model at the reference joint
+00490710	fn	skin_slots	copy skin data; slot offsets -> pointers into the model
+0055ac90	data	g_skin_pieces	per skeleton {count, piece*[]}
+00519a78	data	g_skin_draw_fns	per skeleton skin draw function per piece
+004241b0	fn	title_card_anim	chapter title sprite animation (FUN_00422c00)
+004ac0e0	fn	sprite_draw_ex	sprite id, x, y, z, sx, sy, alpha (anchor flags 10 = centred)
+004031b0	fn	stage_draw	draw the current area's stage models (tables @00597668/@005976a0)
+00403560	fn	evt_op_area	op 0x29: set stage area, unload old area's models
+004035a0	fn	evt_op_area_load	op 0x28: preload an area's models
+0047ede0	fn	sky_task	sky dome + layer centred on the camera (row op 0x1b, mode op 0x1c)
+005b93c0	data	g_sky_rows	sky rows: model, layer, height, spin, start angle
+004bf3c0	fn	frame_begin	BeginScene + D3DX Clear(target|Z) + reset deferred list (when the frame is drawn)
+004bf3e0	fn	frame_end	model_draw_deferred + EndScene
+004bdb00	fn	color_to_d3d	float RGBA (ECX) → D3DCOLOR
+008491e0	data	g_d3dx_context	ID3DXContext (+0x14 device, +0x54 Clear, +0x58 SetClearColor)

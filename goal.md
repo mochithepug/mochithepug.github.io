@@ -118,7 +118,8 @@ Each milestone: **deliverable → how you verify**.
   10a ✅ game screen: PLAY → Stage 1 from block 0 at a fixed 60 Hz (camera, subtitles, light & fog, skip
   sign, letterbox), Enter skips a scene as the exe does, Esc quits; fights held 3 s.
   10b: enemies in the fights — type 0x30/0x31 objects with their skeletons, start motion and behaviours
-  (walk, leap down), placed from the spawn records.
+  (walk, leap down), placed from the spawn records. Part 1 ✅ character rig (object motion system), daemon
+  (type 0x22), zombie type 0x30 behaviours 18 and 26; next: other behaviours/types, stage collision.
   10c: word boxes and typing (M8 core) — words from the word lists, input matching, kill on completion.
   10d: enemy attacks, damage and life; game over.
   10e: placed objects — breakables (kind 4), props and cars; items.

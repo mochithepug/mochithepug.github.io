@@ -64,7 +64,7 @@ async function load(fs: GameFS) {
     initStage(fs, params).catch(showError);
     initEvents(fs, params).catch(showError);
     $('play-game').hidden = false;
-    if (params.get('play') === 'game') startGame(fs).catch(showError);
+    if (params.get('play') === 'game') startGame(fs, 1, Number(params.get('at') ?? 0)).catch(showError);
   }
   if (params.get('tab')) showTab(params.get('tab')!);
 }

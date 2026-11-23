@@ -16,31 +16,18 @@ import {
   type Mat4,
   type ObjectPathSample,
 } from '@ttotd/formats';
+import type { DrawItem, GameObject, World } from '../core/object.ts';
 
-export interface DrawItem {
-  /** Global model id. */
-  model: number;
-  world: Mat4;
-}
-
-export interface CarInputs {
-  /** Current camera path, global id (DAT_00a11a18). */
-  camPath: number;
-  /** Camera time (DAT_00a14a30). */
-  camTime: number;
-  /** Object path by global id at time t (FUN_0040e9a0). */
-  path(id: number, t: number): ObjectPathSample | undefined;
-  /** Path length by global id (@00598508). */
-  length(id: number): number;
+type CarInputs = Pick<World, 'camPath' | 'camTime' | 'path' | 'pathLength'> & {
   /** DAT_00a3b840 == 2: the right door opens as well (meaning of the flag not traced yet). */
   bothDoors?: boolean;
-}
+};
 
 const RAD = (2 * Math.PI) / 65536;
 /** f32 from its bit pattern, as the exe passes constants to the matrix ops. */
 const F = (bits: number) => new Float32Array(new Uint32Array([bits]).buffer)[0]!;
 
-export class OpeningCar {
+export class OpeningCar implements GameObject {
   pos: [number, number, number];
   /** Sega angles x, y, z (obj +0x64, +0x68, +0x6c). */
   angles: [number, number, number];
@@ -70,7 +57,7 @@ export class OpeningCar {
     if (camPath === 0x30 || (camPath === 0x31 && camTime <= 0x15d)) {
       const id = camPath === 0x30 ? 0x11f : 0x120;
       this.moving = true;
-      this.place(w.path(id, Math.min(w.length(id), camTime)));
+      this.place(w.path(id, Math.min(w.pathLength(id), camTime)));
     } else if (camPath === 0x31) {
       this.moving = false;
     } else if (camPath === 0x32) {
@@ -84,8 +71,10 @@ export class OpeningCar {
     if (this.moving) this.wheel += 0x2000;
   }
 
-  /** FUN_004854b0's draw part; `frame` is the global frame counter (g_rng_counter). */
-  draw(frame: number): DrawItem[] {
+  /** FUN_004854b0's draw part: hidden while the title card is up; `frame` = g_rng_counter. */
+  draw(w: Pick<World, 'frame' | 'titleUp'>): DrawItem[] {
+    if (w.titleUp) return [];
+    const frame = w.frame;
     const out: DrawItem[] = [];
     const add = (model: number, world: Mat4) => out.push({ model, world });
     let base = translateLocal(identity(), ...this.pos);

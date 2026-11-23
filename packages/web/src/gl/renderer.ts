@@ -111,6 +111,8 @@ interface GpuMesh {
   ambientScale: number;
   specular: [number, number, number];
   power: number;
+  /** Mesh centre from the file (model space): the exe sorts translucent draws by its view depth. */
+  center: [number, number, number];
   prims: GpuPrim[];
 }
 export interface GpuModel {
@@ -131,6 +133,26 @@ export interface DrawOptions {
   fog?: { color: [number, number, number] } | false;
   /** Replace every mesh's material colour (the exe's per-model colour override, FUN_00489140). */
   colorOverride?: [number, number, number];
+  /**
+   * Which meshes to draw. The game draws every model's opaque meshes first and defers all translucent
+   * meshes to one pass after (model_draw / model_draw_deferred); draw 'opaque' for everything, then
+   * 'translucent'. Default: both, model by model (fine for single-model views).
+   */
+  pass?: 'opaque' | 'translucent';
+}
+
+/**
+ * Sort key of a model in the exe's deferred pass (model_draw): the largest view-space depth (D3D, +z ahead)
+ * of its translucent meshes' centres; −Infinity if it has none. Drawn far to near (FUN_004c12c0).
+ */
+export function translucentDepth(model: GpuModel, worldView: Mat4): number {
+  let d = -Infinity;
+  for (const m of model.meshes) {
+    if (m.state.opaque) continue;
+    const [x, y, z] = m.center;
+    d = Math.max(d, x * worldView[2]! + y * worldView[6]! + z * worldView[10]! + worldView[14]!);
+  }
+  return d;
 }
 
 export class Renderer {
@@ -231,6 +253,7 @@ export class Renderer {
           ambientScale: mesh.ambientScale,
           specular: mesh.specular,
           power: mesh.specularPower > 0 ? 1 << mesh.specularPower : 0,
+          center: mesh.center,
           prims,
         });
       }
@@ -308,7 +331,8 @@ export class Renderer {
     gl.uniform1i(this.u.uTex!, 0);
     gl.activeTexture(gl.TEXTURE0);
     gl.enable(gl.DEPTH_TEST);
-    for (const pass of [true, false]) {
+    const passes = o.pass === 'opaque' ? [true] : o.pass === 'translucent' ? [false] : [true, false];
+    for (const pass of passes) {
       if (pass) gl.disable(gl.BLEND);
       else gl.enable(gl.BLEND);
       for (const m of model.meshes) {

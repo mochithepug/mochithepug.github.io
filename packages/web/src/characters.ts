@@ -1,18 +1,24 @@
 /** Character viewer (M5): skeletons from the exe + motions from mot/, played at the game's 60 Hz. */
 import {
   identity,
+  modelRef,
   Motion,
   motionFits,
   poseCharacter,
   readCharacterTypes,
   readMotionTable,
+  readSkins,
   type CharacterType,
+  type SkinPiece,
   type MotionInfo,
+  type Mat4,
   type PolModel,
 } from '@ttotd/formats';
+import { skinItems } from '@ttotd/engine';
 import { Assets } from './assets';
 import type { GameFS } from './ingest/gamefs';
 import { OrbitCamera } from './gl/orbit';
+import { patchedModel } from './gl/patch';
 import { Renderer, type GpuModel, type TextureSource } from './gl/renderer';
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
@@ -25,8 +31,10 @@ interface Ctx {
   cam: OrbitCamera;
   type?: CharacterType;
   motion?: Motion;
-  /** Per drawable node: GPU model + textures (by node.model id). */
-  parts: Map<number, { gpu: GpuModel; tex?: TextureSource }>;
+  /** Per drawable node and skin piece: GPU model + textures (by global model id). */
+  parts: Map<number, { gpu: GpuModel; tex?: TextureSource; model: PolModel }>;
+  /** Skin pieces by skeleton (they fill the joins, e.g. a zombie's belly). */
+  skins: SkinPiece[][];
   frame: number;
   playing: boolean;
   acc: number;
@@ -45,6 +53,7 @@ export async function initCharacters(fs: GameFS, params = new URLSearchParams())
     renderer: new Renderer($<HTMLCanvasElement>('chr-canvas')),
     cam,
     parts: new Map(),
+    skins: readSkins(assets.pe),
     frame: 0,
     playing: params.get('play') !== '0',
     acc: 0,
@@ -105,11 +114,15 @@ async function selectType(t: CharacterType, motionHint?: string) {
     n.children.forEach(walk);
   };
   walk(t.root);
+  for (const piece of ctx.skins[t.index] ?? []) {
+    const ref = modelRef(ctx.assets.pe, piece.model);
+    if (ref) nodes.push({ model: piece.model, file: ref.file, index: ref.index });
+  }
   for (const n of nodes) {
     const models: PolModel[] = await ctx.assets.models(n.file);
     const m = models[n.index];
     if (!m || token !== ctx.token) continue;
-    ctx.parts.set(n.model, { gpu: ctx.renderer.upload([m]), tex: await ctx.assets.textures(n.file) });
+    ctx.parts.set(n.model, { gpu: ctx.renderer.upload([m]), tex: await ctx.assets.textures(n.file), model: m });
   }
   if (token !== ctx.token) return;
 
@@ -243,9 +256,19 @@ export function redraw() {
     r.clear();
     const { view, proj, lighting, eye } = ctx.cam.matrices(w / h);
     const lit = $<HTMLInputElement>('chr-lit').checked, culling = $<HTMLInputElement>('chr-cull').checked;
-    for (const { node, matrix } of currentPose()) {
+    const posed = currentPose();
+    const byJoint: Mat4[] = [];
+    for (const { node, matrix } of posed) {
+      byJoint[node.joint] = matrix;
       const part = ctx.parts.get(node.model);
       if (part && node.ref) r.draw(part.gpu, part.tex, { world: matrix, view, proj, lit, culling, lighting, eye });
+    }
+    for (const d of ctx.type ? skinItems(ctx.skins[ctx.type.index] ?? [], (j) => byJoint[j]) : []) {
+      const part = ctx.parts.get(d.model);
+      if (!part) continue;
+      const gpu = d.patch?.length ? r.upload([patchedModel(part.model, d.patch)]) : part.gpu;
+      r.draw(gpu, part.tex, { world: d.world, view, proj, lit, culling, lighting, eye });
+      if (gpu !== part.gpu) gpu.dispose();
     }
   });
 }

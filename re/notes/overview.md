@@ -317,7 +317,7 @@ Port: `packages/formats/src/events.ts`; viewer: Events tab.
     Type 0x30 replaces +0x1f8 with byte 0 of the data at obj +0x1394 unless it is 9; who sets +0x1394 for
     these objects is still open. Type 0x30's draw (`FUN_00442bc0`) scales ×2 (×1.8 for skeleton 14) only
     when DAT_00a3bac0 & 2.
-    Type 0x30 starts motion obj +0x1b8 = 0x3f5 (`zom.bin#13`; 0x457 `hzom.bin#9` when kind = 4): frame 0
+    Type 0x30 starts motion obj +0x1b8 = 0x3f5 (`zom.bin#13`; 0x457 only when obj +0x1310 is already 4 — not for fresh spawns): frame 0
     puts the feet at y ≈ 0. Model front is local −Z (the unanimated pose has the feet turned to +Z). The
     body keeps the record's yaw; only node 2 (head, `FUN_00442c60`) turns toward the camera eye
     (DAT_00a396a0 ← DAT_00a149e0, +15 y), within ±0x4000 of body yaw − 0x8000, when obj +0x34 & 0x40000
@@ -364,7 +364,7 @@ Port: `packages/formats/src/events.ts`; viewer: Events tab.
     with motion = record +0x26, wings = a sub-object (obj +0x13b4) with skeleton 0x46 (70, 7 joints, bat
     motions), motion 0x10. It speaks the fly-over lines ("I've already taken care of G."). Kind
     (record +0x25) 0 → behaviours @005eb3b4[obj +0x1314]: **0** (`FUN_004b4510`, fly-over): placed at
-    (−406, 152.5, 142.4) yaw 0x717f (on a rooftop); camera time 70 → motion 0x448 (+voice 0x4317a9); motion end → 0x44a;
+    (−406, 152.5, 142.4) yaw 0x717f (on a rooftop); camera time 70 → motion 0x448 blend 5 (+voice 0x4317a9); motion end → 0x444 (1092, hard switch; corrected); not drawn while waiting for time 170;
     time 170 → voice 0x4517a9; then follows object path 0x122 at camera time until the title card ends
     (DAT_00a397b8) → behaviour **1** (`FUN_004b4680`): camera path 0x31 → path 0x123 (t 250 → motion 1098
     blend 8; t 280 → motion 1103 blend 3, then 1098 when it ends), 0x32 → path 0x124 (t 180 voice, t 240 →
@@ -488,8 +488,17 @@ Port: `packages/formats/src/prop.ts`; viewer: Props tab.
   **op 0x45 248** (`FUN_0044f7f0`: wait until flag byte DAT_00a396c0[N] != 0; 0xa396c0 + 248 = 0xa397b8), so camera
   path 49 starts only after the card. Object task table @00a11180 is filled from
   {type, fn} pairs @005a741c (FUN_0044e730).
-- **Letterbox bars** in cut scenes (user): drawing code not found yet (not a sprite at x = 0, not an
-  obvious viewport/black fill). The Stage tab shows 60 px bars (640×360 picture) while the scene is
+- **Letterbox bars** in cut scenes (user: they slide out at a scene's end, not vanish): drawing code still not
+  found. Ruled out (2026-11-23): event op 0x2C (`FUN_0044f900` only sets DAT_00a11a38 / DAT_00a1112c / DAT_00a11a14),
+  `skip_task`, the subtitle tasks (FUN_004238c0 / 004239a0 / 00423cf0), D3D SetViewport (never called), any
+  untextured 2D draw (every 2D quad is a textured sprite: FUN_00493c00 / 00493cb0 → FUN_004c4e40 → FUN_004c0320),
+  sprite draws centred at x = 320 or stretched ≥ 8× (only 0xE36, a full-screen dim in FUN_00498fb0). Next
+  candidates: sprites with computed y / scale, a 3D model in front of the camera. The PLAY screen slides the
+  bars over 20 frames (provisional).
+- **Frame clear = black**: the D3DX context (`DAT_008491e0`, ID3DXContext: +0x14 device, +0x44 RestoreSurfaces,
+  +0x48 Resize, +0x4c UpdateFrame, +0x54 Clear, +0x58 SetClearColor) gets SetClearColor(FUN_004bdb00(@008491d0 =
+  0, 0, 0, 1)) once at start-up (FUN_004bcec0); every frame `FUN_004bf3c0` = BeginScene + Clear(3) (target + Z).
+  Never the fog colour — where nothing is drawn (title card, sky off) the screen is black. The Stage tab shows 60 px bars (640×360 picture) while the scene is
   skippable — **height provisional**, to measure from the user's video.
 - `evt/*.bin` are **stored raw** (not LZ) and contain Dreamcast RAM pointers (0x0CEBxxxx), so they need
   relocation (M9). Stage 1 has **5 skippable scenes**: 0x2C on/off at offsets 0x24C/0x268, 0x468/0x530,
@@ -531,3 +540,89 @@ size limits, evt pointer targets. LZ claims are covered by `real-data.test.ts`.
   sets ambient from @0087ade0 and up to 16 D3DLIGHT7s from @0087a760 (stride 0x68), enabled per
   flag @0087ae6c. Open: who writes these values (per stage / event) — trace in M7. Fog render
   states (FOGCOLOR 0x22, FOGSTART/END 0x24/0x25) are set around @004c4xxx — also M7.
+
+## Object motion system (ported 2026-11-23: `packages/engine/src/core/rig.ts`)
+
+Game objects animate through a motion state at obj +0x198 (`FUN_004742a0` set-up, drawn by `FUN_00474ff0` →
+`FUN_00475030`). Not the same code as the sequential playback of the Characters tab (`FUN_00472e10`, used via
+`FUN_00473380`).
+- State: [0] counter (the object adds 1 after drawing), [2] frame, [4] previous stored index, [6] stored index,
+  [8] motion id, [10] blend start, byte +0x30 blend length (N + 1), byte +0x37 flags (1 blending, 0x20 half
+  frame), +0x60 skeleton, +0x64 flags (1 draw, 2 root motion, 8, 0x10 root y too), +0x68 object rotation order
+  (5: Z, Y, X; 1: X, Z, Y), +0x116c size (skeleton 0x1e 0.6, 0x1f 0.7, 0x20–0x38 0.9, else 1), +0x1158 per-node
+  draw hook, +0x1160 last root position. Per joint a 0x90 block at +0x78: +0 model, +4 current angles,
+  +0x10 from, +0x1c to, +0x28 world matrix.
+- Step (`FUN_00475100`): f = counter % (F + 1); odd f (≠ F) shows halfway between stored frames f/2 and f/2 + 1
+  (flag 0x20, t = 0.5); even f shows stored frame f/2. While blending (`FUN_00475900(state, id, start, N)`: from =
+  current pose, to = target frame; start = counter − 1, length N + 1), t = (counter − start) / (N + 1) until
+  counter − start = N + 2, then counter = start frame + 1.
+- Root (`FUN_00474880`, `FUN_00474bb0`): position lerps; with root motion the root's x/z travel since the last
+  frame (transformed by the object's rotation and size) moves the object (`obj +0x40`), and only root y is drawn.
+  Joints (`FUN_00475660`): half frames lerp angles the short way (d = (b − a) & 0xffff; > 32768 → − 65536;
+  trunc(d·t + a)); blends use `FUN_00476550`: rotation from→to split into a swing of the Y axis (angle θ
+  around (vz, 0, −vx)) and a twist around Y (φ), applied as rotAxis(trunc(θ·t)) then rotY(trunc(φ·t)), turned
+  back into angles by `FUN_0040c040`. Hard switch `FUN_00475890`: counter = frame = 0, no blend.
+- Spawn lists: op 0x03 runs only with one player, 0x07 only with two (`FUN_0041fdd0` / `FUN_0041fe10`,
+  DAT_00a3b844); Stage 1 lists each wave under both.
+- Zombie behaviour 18 (`FUN_00446700`): play motion record +0x28 (the opening wave: 1053, 1052, 1064), wait
+  until camera time = record +0x2c (469), then behaviour = record +0x27 (1, the attack — not ported).
+  Leap (behaviour 26) as noted above; velocity is zeroed on landing (`FUN_0043cf20`). The landing height comes
+  from the floor: after drawing, `FUN_00445a40` (via @005a2234) casts down into the stage collision
+  (`FUN_00437100` → `FUN_0040fad0`) and puts the zombie on the floor (`FUN_00413410`) — collision is not ported,
+  so the jump variant (motion 0x3c4, which drifts during its 26-frame crouch) lands too low for now.
+
+## Chapter title card graphics (ported 2026-11-23: `objects/t60-titlecard.ts`)
+
+- `FUN_00422c00` (type 0x60) draws, every frame of its 0xB4, `FUN_004241b0(190, 80, 400, 350)` for Stage 1
+  (sprite ids @005fa5b0… = 0x210–0x217; other stages use other ids/points — `DAT_00a10c08` cases 1–5).
+  Animation state @005fa4b0 (`FUN_00424110` resets it): counter @005fa4c0, phase @005fa4cc, scales/alphas.
+  Phases: 0 (frames 0–14) two title halves zoom 1.5×→1 with doubled copies 4.5×/6×→1; 1 (15–45) copies grow
+  and fade, sprites 7 and 4 fade in; 2 (46–85) flicker through 5/2/6/3/0/1 then fade; 3 (86–115) nothing;
+  4 (116–170) 6/3 grow and fade while 7/4 fade in, then squash-and-stretch of 0/1.
+- Sprite draw `FUN_004ac0e0(id, x, y, z, sx, sy, alpha)` → `FUN_00493cb0` → `FUN_004c4e40` (queues a quad;
+  alpha → colour byte) → corners in `FUN_004c0320`: half-size = texture × scale / 2, corner table @005eb938
+  {(1,3),(3,3),(1,1),(3,1)} minus the anchor (flags & 3, flags >> 2 & 3); flags 10 → anchor (2,2) = centred,
+  flags 0 → (1,1) = top-left. Sprites 0x210–0x217 → scr_chapter_st1 textures 0–7 (global ids 0x774–0x77b).
+- Extra sprite 0x498 (texture 8) when DAT_00a3bb40 high word = 1: not ported.
+
+## Skin pieces (ported 2026-11-23: `formats/src/skin.ts`, `engine/src/core/rig.ts` skinItems)
+
+Found from the user's report that znsam2's belly showed the background (the original: solid skin to the belt).
+Characters have extra **skin models** whose vertices follow two joints, filling the joins between rigid parts;
+84 pieces on 64 skeletons (znsam2: the belly, model 0x2298 = znsam2 #2; the daemon: its waist; the wings: two).
+- `FUN_004742a0` reads @0055ac90[skeleton] → {count, piece*[]}; `FUN_00475030` after the joints loops the pieces:
+  `FUN_0048f910` (once) copies the piece and the joint numbers (@0051916c + piece·0x14: A0, A1, B0, B1, reference;
+  other tables for skeletons 0x0e, 0x1f/0x46/0x4e, 0x41, 0x4c, 0x53) and relocates the skin data
+  (`FUN_00490710`: slots of −1-terminated byte offsets of vertex records in the model); then the skeleton's draw
+  function @00519a78: 0x490280 = group A0, 0x490230 = B0, 0x48fca0 = A0 A1 B0 B1 (`FUN_0048fd70` each), then
+  `FUN_0048ff30` draws the model at the reference joint (most skeletons: plain draw).
+- `FUN_0048fd70`: L = joint · reference⁻¹; for every slot whose byte in the group's list is ≥ 0, entry =
+  position + normal (0x18 bytes) → position·L, normal·L written into the model's vertex records
+  (`FUN_00490870` / `FUN_004908c0`, x and normal z with bit 0 set). znsam2: 16 slots, 8 follow the torso
+  (joint 1), the rest stay as modelled in the waist's space (joint 9).
+- Not ported: skeleton 0x17's own functions (0x490290 / 0x490410) and skeleton 0x4c's variant writers.
+
+## Stage areas & sky (ported 2026-11-23: `formats/src/stagedraw.ts`, `engine/src/objects/sky.ts`)
+
+- **Stage scenery** is drawn by the task `FUN_004031b0` (created by `FUN_004033c0`), not "all st files": per stage
+  an area table @00597668[stage−1] (0x18-byte entries of i16 indexes, −1 ends) into a model list
+  @005976a0[stage−1] (u32: model id | flags << 16; flag 2 = light group 7 via FUN_004c0260). The current area is
+  DAT_00a11124, set by **event op 0x29** (`FUN_00403560`; also unloads the old area's models, `FUN_004034d0`);
+  **op 0x28** preloads an area (`FUN_004035a0` → `FUN_00403440`). Each model is culled by a sphere test
+  (FUN_00410a20). Nothing is drawn while DAT_00a14048 & 0x20 (the title card). Special cases: model 0x18dc
+  (areas 2/3 also draw 0x1401, 0x13ff), 0x19cc, 0x1d1a. Stage 1: 13 areas (area 1 = st1_01 + st1_01b …);
+  `st1_1.bin` / `st1_1b.bin` are libraries (skies, distant scenery, props) — never in the area lists.
+- **Sky**: task `FUN_0047ede0` (created by `FUN_0047efe0`). Row = DAT_00a118d4 (**op 0x1b**), mode = DAT_00a3e764
+  (**op 0x1c**: 0 off, 1 on and turning, 2 on and still). Table @005b93c0, 16 bytes: i16 sky model, i16 layer,
+  f32 height, i32 spin, i32 start angle. Drawn at the camera eye + height, rotY(angle) (row 5: rotZ(0x8000)
+  then rotY(−angle) — upside down), scale 1.2, then the layer at the eye. Stage 1: row 5 for the fly-over (the
+  dome lies below the street and shows through the translucent wet-road meshes, e.g. st1_01 mesh 284), off
+  before the title card, row 4 afterwards.
+- **Wet-street reflections** are geometry: `st1_01b` (area 1's 0x18b2) is a mirrored copy of the street's
+  buildings, bridge and lamps below y = 0 (y −147…4), seen through the translucent puddle meshes of st1_01.
+  It only shows because translucent meshes of *all* models are deferred until every opaque mesh is drawn
+  (`model_draw` pushes the model with priority DAT_0087a66c & 0xf and depth DAT_0087a6b4 = the largest
+  view-space z of its translucent meshes' centres; `model_draw_deferred` qsorts by priority, then far to near,
+  `FUN_004c12c0`). Drawing opaque + translucent model by model hides the reflection behind the puddles' depth.
+  Port: `Renderer.draw({ pass })` + `translucentDepth` in the game screen (priority not ported: all 8 so far). Rows 8/10/11 have their own placement (not ported).
+- Ops 0x1d (DAT_00a3b804), 0x1e (DAT_00a3b438), 0x1f (DAT_00a3e7b4) set other display globals (not traced yet).

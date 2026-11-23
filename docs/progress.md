@@ -270,7 +270,7 @@ headless Chrome screenshots: fly-over with the skip sign, Enter → next scene (
 Esc → back to the tools.
 **Next:** 10b enemies in the fights.
 
-### 10a+ — The opening car (2026-11-23)
+### 10a+ — The opening car (2026-11-23) ✅ verified by user 2026-11-23
 **Delivered:** event op 0x0B decoded as a spawn (it creates the car, the players, more zombies); object
 paths (`cam/op_stN.bin`, same format as camera paths, 6 channels) with `CameraFile.objectSample` and the
 exe's path lengths; new **`packages/engine`** (ported game logic) with the players' car (type 0x26, variant 1:
@@ -287,3 +287,40 @@ misnamed "James and Gary"); title card graphics.
 when it ends. The player now implements 0x45 and the title card sets the flag (game screen and Stage view), so
 the scene fades to black for the 3 s card and path 49 starts afterwards with the car beside the camera
 (test + screenshots).
+
+### 10b (part 1) — Character rig, the daemon, the first zombies (2026-11-23) ✅ verified by user 2026-11-23
+**Delivered:** `packages/engine` reorganised (core/, objects/tNN-*.ts, registry.ts); the **character rig** = the
+exe's object motion system (motion state, half frames, blended switches with the swing/twist rotation blend,
+root motion, per-node draw); the **daemon** (type 0x22: rooftop, motion cues, wings on the body's joint 1,
+talking mouth, eyes, flies off, removed at path 50 time 400); the **zombie** type 0x30 with behaviours 18 (wait
+with an idle motion) and 26 (leap down); spawn records carry their parameter bytes (`tail`); the PLAY screen runs
+every ported object from the registry and loads models and motions on demand; one-/two-player spawn lists fixed.
+**Verified:** tests (scene runner on real data) — the daemon's timeline (rooftop, 0x448, 1092, path 49 with
+1103, 1099, gone), the first wave = three znsam2 with motions 1052/1053/1064, feet on the ground; the blend
+starts at A and ends at B; screenshots: daemon on the rooftop, landing on the car ("What!?"), at the fence
+("You're next."), on the church roof; the first fight with its three zombies.
+**Open:** zombie behaviour 1 (attack) and others; head turning to the player; the jump leap lands too low until
+stage collision is ported; voices.
+
+### 10f (title card part) — Chapter title graphics (2026-11-23) ✅ verified by user 2026-11-23 (title card and bellies)
+**Delivered:** the title card's animation (`FUN_004241b0`) ported into `TitleCard.layers`; the PLAY screen draws
+the layers (scr_chapter_st1 textures, centred sprites) on a 2D overlay. **Verified:** screenshots during the
+card ("The First Chapter" / "A Prelude", zoom and drip phases). **Fixed (user: zombie belly see-through):** characters' **skin pieces** were not drawn — ported (exe tables
+@0055ac90 / @0051916c / @00519a78, vertices moved by joint · reference⁻¹ each frame) in PLAY and the Characters
+tab; tests: znsam2's belly piece, all 2 238 slot offsets land on model vertices; screenshots: bellies closed.
+
+### 10f (sky part) — Sky and stage areas (2026-11-23) ✅ verified by user 2026-11-23
+**Delivered (user: skydome missing):** the stage is drawn by area from the exe's tables (event op 0x29) instead of
+drawing every st file — st1_1/st1_1b are libraries whose fogged sky variants had covered the sky; the sky task
+(ops 0x1b/0x1c) draws the dome and cloud layer around the camera, turning, upside down for the fly-over;
+nothing is drawn behind the title card. Debug `?dev&play=game&at=N` freezes PLAY at frame N for exact screenshots.
+**Verified:** tests (13 areas, area 1 = st1_01 + st1_01b, sky rows 4/5, the player's area/sky after block 0);
+screenshots: dusk sky over the first fight; the fly-over's wet road reflecting the upside-down sky (ray-cast
+confirmed the patch is st1_01's translucent mesh 284, not a hole).
+**Follow-up (user: street reflection differs from the original):** the game screen now draws like the exe —
+every opaque mesh first, then all translucent meshes, models sorted far to near. The mirrored street (st1_01b)
+now shows through the puddles: upside-down bridge, railing and lamp, as in the user's screenshot (frame 40).
+**Follow-up (user: title card background not black; letterbox should slide out):** the frame is cleared to
+black like the exe (found the D3DX clear colour, set once to 0,0,0) instead of the fog colour — the title card is
+now on black; the letterbox bars slide out (and in) over 20 frames — provisional, the exe's bar code is still not
+found (searched paths listed in the notes). Screenshots: frames 225 (bars in), 240 (sliding out), 330 (title card).
