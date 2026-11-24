@@ -16,6 +16,7 @@
 import { asciiToSjis, charMetrics, identity, letterModelId, readWordFlags, rotateYLocal, rotateZLocal, scaleLocal, translateLocal, type Mat4, type PeImage } from '@ttotd/formats';
 import type { DrawItem, World } from '../core/object.ts';
 import type { WordDeck } from '../core/words.ts';
+import { restartAttackTimer } from '../core/player.ts';
 
 type Vec3 = [number, number, number];
 const f32 = Math.fround;
@@ -104,6 +105,7 @@ export class WordBox {
       this.pos = [a[0], a[1], a[2]];
       this.danger = 1;
       w.wordPickedFrame = w.frame;
+      restartAttackTimer(w); // FUN_004b1ef0 → FUN_004b1410(2)
       return;
     }
     if (!(f & 0x4000000)) this.danger = dangerOf(o, w);
@@ -158,6 +160,7 @@ export class WordBox {
     if (this.typed >= t.length) {
       w.targets[0] = -1;
       this.owner.wordDone?.(w, 0);
+      restartAttackTimer(w); // FUN_004b32f0, word complete → FUN_004b1410(2)
       this.deck.release(this.slot); // FUN_004b23e0
     }
   }

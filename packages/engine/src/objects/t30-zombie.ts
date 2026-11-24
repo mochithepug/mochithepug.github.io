@@ -85,6 +85,11 @@ export class Zombie implements GameObject, WordOwner {
   private damage = 0;
   /** Second flag word (+0x1370). */
   private flags2 = 0;
+  /** Queue places (+0x1321 among all queued zombies, −1 until ranked; +0x1322 among those not backing off) and the
+   * band's allowance (+0x135c, FUN_00445750 from event op 0x0F's counts). */
+  private queuePlace = -1;
+  private queueReady = 0;
+  private allowance = 0;
   /** Where it stood when the attack began (+0x13dc) and the point it attacks (+0x13e8). */
   private spot: Vec3 = [0, 0, 0];
   private attackPoint: Vec3 = [0, 0, 0];
@@ -133,6 +138,8 @@ export class Zombie implements GameObject, WordOwner {
     this.kind = (t[1]! << 24) >> 24;
     this.behaviour = (t[2]! << 24) >> 24;
     this.hp = rec.hp;
+    // FUN_00441d80: +0x1370 = (short) record word 8 (+0x131a) | 0x60000000
+    this.flags2 = ((rec.flagsWord ?? 0) | 0x60000000) >>> 0;
     this.flags = (rec.param | 1) >>> 0;
     this.place = { pos: [...(rec.pos ?? [0, 0, 0])], angles: [...(rec.angles ?? [0, 0, 0])] };
     this.rig = new CharacterRig(w.skeletons[this.skeleton]!, this.skeleton, 0x3f5, w.motions, w.skins[this.skeleton]);
@@ -275,6 +282,7 @@ export class Zombie implements GameObject, WordOwner {
     else if (this.behaviour === 6) this.die(w);
     else if (this.behaviour === 7) this.sink();
     else if (this.behaviour === 39) this.waitRelease(w);
+    else if (this.behaviour === 5) this.waitTurn(w);
     else if (this.behaviour === 0x2d) this.pauseOverVictim(w);
   }
 
@@ -348,6 +356,16 @@ export class Zombie implements GameObject, WordOwner {
 
   /** After posing: anchors, sparks, registration, motion counter. */
   private afterPose(w: World) {
+    // FUN_00420720: join the queue (shown, not dead, +0x1370 bit 0x8000000 clear), key = trunc(distance × 10)
+    if (this.flags & 1 && !(this.flags & 0x4000000) && !(this.flags2 & 0x8000000) && !this.dead)
+      w.queue?.push({
+        key: Math.trunc(this.playerDistance(w) * 10),
+        backingOff: (this.flags & 0x20000000) !== 0,
+        setPlaces: (all, ready) => {
+          this.queuePlace = all;
+          this.queueReady = ready;
+        },
+      });
     // FUN_00475420 at joint 1: view- and world-space position; FUN_00436f00(4): world y + 4
     const j = this.rig.joints[1]?.matrix;
     if (j) {
@@ -376,13 +394,37 @@ export class Zombie implements GameObject, WordOwner {
     return f32(Math.sqrt(dz * dz + dx * dx));
   }
 
-  /** FUN_00445750: 1 within near, 2 near–mid, 3 mid–far, 4 beyond far. */
+  /**
+   * FUN_00445750: 1 within near, 2 near–mid, 3 mid–far, 4 beyond far; sets the allowance +0x135c — how many zombies
+   * may be ahead of this one: counts[0] (bands 1–2), counts[0] + counts[1] (3), all three (4).
+   */
   private band(w: World): number {
     const d = this.playerDistance(w), [near, mid, far] = w.bands[this.bandRow] ?? [25, 38, 51];
-    if (d <= near!) return 1;
-    if (d <= mid!) return 2;
-    if (d <= far!) return 3;
-    return 4;
+    const [a, b, c] = w.attackCounts ?? [2, 3, 4];
+    if (d > far!) {
+      this.allowance = a! + b! + c!;
+      return 4;
+    }
+    if (d > mid!) {
+      this.allowance = a! + b!;
+      return 3;
+    }
+    this.allowance = a!;
+    return d > near! ? 2 : 1;
+  }
+
+  /** Behaviour 5 (FUN_004446c0): wait (idle motion by flag +0x1370 bit 21), facing the player, until the queue moves. */
+  private waitTurn(w: World) {
+    if (this.state === 0) this.state = 1;
+    else if (this.state !== 1) return;
+    const m = w.motionSet(this.skeleton, this.kind)?.[(this.flags2 >>> 21) & 1];
+    if (m !== undefined && this.rig.motion !== m) this.rig.blendTo(m, w.rand() % 5, 10);
+    const target = heading(this.place.pos[0] - w.eye[0], this.place.pos[2] - w.eye[2]);
+    this.place.angles[1] = turnTowards(this.place.angles[1], target, 0x40); // FUN_00437250
+    if (this.queuePlace < this.allowance) {
+      this.behaviour = 1;
+      this.state = 0;
+    }
   }
 
   /** FUN_00443860: switch to a motion (blended) if not already playing it. */
@@ -407,8 +449,14 @@ export class Zombie implements GameObject, WordOwner {
     const off = transformDir(rotationMatrix([0, Math.trunc(e[1]), 0]), [0, 0, 1.5]);
     const target = heading(this.place.pos[0] - (e[0] + off[0]!), this.place.pos[2] - (e[2] + off[2]!));
     this.place.angles[1] = turnTowards(this.place.angles[1], target, Math.trunc((fast * 1.5 + 1) * 416));
-    // bands 2–4 with obj +0x135c <= +0x1321 (−1) would switch to behaviour 5; kind 8 may switch to 0x21 — neither
-    // happens for these zombies.
+    // too far back in the queue for this band → wait (5); the idle variant from @004f1334[(rand >> 4) % 10]
+    if (this.allowance <= this.queuePlace) {
+      const variant = [1, 1, 1, 1, 1, 1, 1, 0, 0, 0][(w.rand() >> 4) % 10]!;
+      this.behaviour = 5;
+      this.state = 0;
+      this.flags2 = (this.flags2 | (variant << 21)) >>> 0;
+    }
+    // (band 3–4, kind 8: FUN_00447ff0 may switch to 0x21 — not used by these zombies)
   }
 
   /** Behaviour 2 (FUN_00444770): stand facing the player; take the attack slot → 3; too close → 4. */
@@ -419,8 +467,8 @@ export class Zombie implements GameObject, WordOwner {
       this.state = 0;
       return;
     }
-    // Allowed to ask (no +0x400 flag; +0x135c = DAT_00a3b7f0.. ≥ 2 > +0x1321 = −1; +0x1322 < 3; no cool-down).
-    if (!(this.flags2 & 0x400) && this.requestAttack(w)) {
+    // Allowed to ask: no +0x400 flag, within the queue allowance, fewer than 3 ready ahead (cool-down +0x1340 not ported)
+    if (!(this.flags2 & 0x400) && this.queuePlace < this.allowance && this.queueReady < 3 && this.requestAttack(w)) {
       this.behaviour = this.kind === 4 ? 0x34 : 3;
       this.state = 0;
       return;
@@ -434,6 +482,7 @@ export class Zombie implements GameObject, WordOwner {
   /** FUN_00444e90, one player: take the player's attack slot if it is free. */
   private requestAttack(w: World): boolean {
     this.victim = -1;
+    if ((w.attackTimer ?? 0) !== 0) return false; // FUN_004b14c0: the attack timer has not run out
     if (w.attackSlots[0]) return false;
     this.victim = 0; // FUN_00437180: the player is in the fight
     w.attackSlots[0] = 1;

@@ -86,6 +86,8 @@ export interface SpawnRecord {
    * {motion, start frame, repeats, kill frame} until motion < 1. Undefined where the pointer leaves the file.
    */
   steps?: [StepEntry[] | undefined, StepEntry[] | undefined];
+  /** Record word 8 as a short (+0x20; obj +0x131a): zombies start +0x1370 from it, sign-extended, | 0x60000000. */
+  flagsWord?: number;
   /** Type 0x30: the raw data at extra +4 / +8 (up to 0x80 bytes) — behaviours 34 / 40 read their own layouts. */
   lists?: [Uint8Array | undefined, Uint8Array | undefined];
 }
@@ -119,6 +121,7 @@ function readPositionedRecord(src: EventFile, off: number, source: 'stage' | 'co
     type: w(0), param: w(1),
     pos: [f(2), f(3), f(4)],
     angles: [w(5), w(6), w(7)],
+    flagsWord: dv.getInt16(off + 0x20, true),
     hp: dv.getInt16(off + 0x22, true), kind: src.data[off + 0x25]!, skeleton: dv.getInt8(off + 0x24), source,
     tail: src.data.slice(off + 0x24, Math.min(off + 0x64, src.data.length)),
   };

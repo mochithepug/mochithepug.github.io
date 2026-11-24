@@ -28,7 +28,7 @@ import {
   readMotionTable,
   STAGE_EVENT_FILES,
 } from '@ttotd/formats';
-import { createObject, CrtRand, FightCamera, hurtPlayer, startLives, tickPlayers, type AimEntry, WordBoxes, WordDeck, type GameObject, type MotionLib, type World } from '../src/index.ts';
+import { CrtRand, FrameStepper, hurtPlayer, startLives, WordBoxes, WordDeck, type MotionLib, type World } from '../src/index.ts';
 
 export function loadScene(dir: string, stage = 1, block = 0, holdFrames = 60) {
   const pe = new PeImage(new Uint8Array(readFileSync(join(dir, 'Tod_e.exe'))));
@@ -96,75 +96,35 @@ export function loadScene(dir: string, stage = 1, block = 0, holdFrames = 60) {
     pe,
     say: (id) => player.say(id, 'civilian: '),
     route: (n) => player.setRoute(n),
-    spawn: (rec, parent) => {
-      const obj = createObject(rec, world, parent);
-      if (obj) {
-        objects.push({ obj, type: rec.type });
-        boxes.add(obj, rec.type);
-      }
-      return obj;
-    },
   };
-  const keys: string[] = [];
   const deck = new WordDeck(pe, (name) => {
     const f = join(dir, 'word', name);
     return existsSync(f) ? decodeWordList(new Uint8Array(readFileSync(f))) : undefined;
   }, rng);
   world.words = deck;
   const boxes = new WordBoxes(pe, deck);
-  const objects: { obj: GameObject; type: number }[] = [];
-  let spawned = 0;
-  const fightCam = new FightCamera(pe);
-  let aims: AimEntry[] = [];
-  let over = false;
+  // the same frame step as PLAY (core/frame.ts)
+  const stepper = new FrameStepper(player, world, boxes, (id, t) => {
+    const k = camSlot.ids.indexOf(id);
+    return k < 0 ? undefined : cam.sample(k, t);
+  }, pe);
   player.start(block);
   return {
     pe,
     player,
     world,
-    objects,
+    /** Live objects in spawn order (finished ones are dropped each frame, as in PLAY). */
+    get objects() {
+      return stepper.objects;
+    },
     /** Attacks that reached a player (World.hitPlayer). */
     hits,
     boxes,
     /** Queue keys to type, one per frame (upper-cased like the game). */
-    type: (text: string) => keys.push(...[...text].map((c) => c.toUpperCase())),
+    type: (text: string) => stepper.keys.push(...[...text].map((c) => c.toUpperCase())),
     /** Word box draw items (world matrices). */
     boxItems: () => boxes.draw(world, (m) => mul(m, invert(world.view))),
-    /** One 60 Hz frame: script, then every object in spawn order. */
-    step() {
-      player.step();
-      world.camPath = player.shot?.pathId ?? -1;
-      world.camTime = player.timer;
-      const k = player.shot ? camSlot.ids.indexOf(player.shot.pathId) : -1;
-      if (k >= 0) {
-        const mode = player.shot!.fight !== undefined && !player.fightDone ? (over ? 'return' : 'fight') : 'path';
-        const r = fightCam.step(cam.sample(k, player.shot!.t), mode, aims);
-        if (mode === 'return' && r.back) player.endFight();
-        const c = cameraFromSample(r.cam);
-        world.eye = c.eye;
-        world.view = cameraView(c);
-        world.camYaw = c.yaw;
-      }
-      world.inFight = player.shot?.fight !== undefined;
-      boxes.applySetup(player.words);
-      world.key = keys.shift();
-      for (; spawned < player.spawns.length; spawned++) {
-        const rec = player.spawns[spawned]!;
-        const obj = createObject(rec, world);
-        if (obj) {
-          objects.push({ obj, type: rec.type });
-          boxes.add(obj, rec.type);
-        }
-      }
-      world.active = 0;
-      world.aims = [];
-      for (const o of objects) if (!o.obj.dead) o.obj.update(world);
-      boxes.update(world);
-      tickPlayers(world);
-      // FUN_0040cda0: the fight is over once no enemy is left; the camera turns back, then ends it (above)
-      aims = world.aims;
-      over = world.inFight && world.attackers === 0 && world.active === 0;
-      world.frame++;
-    },
+    /** One 60 Hz frame — FrameStepper.step, exactly as PLAY runs it. */
+    step: (enter = false) => stepper.step(enter),
   };
 }

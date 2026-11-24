@@ -966,3 +966,37 @@ Every spawn in st1evtbl.bin (ops 0x03 / 0x09 / 0x0A / 0x0B / 0x0C), by type — 
   (FUN_0040d930) clears it. The player's `fightDone` now starts true (starting part-way had it false: a wait at the
   start of block 9 never passed). Op 0x47 (`FUN_0044f890`): wait until the fight camera is done and nothing is
   registered (not used in Stage 1).
+
+## Zombie queue and event op 0x0F (ported 2026-11-24)
+
+- **Op 0x0F** (`FUN_00420340`; `FUN_004203c0` the same + 1 to the first with two players): DAT_00a3b7f0 / f4 / f8 from
+  the list until −1 (defaults 2 3 4, `FUN_00420480`). Stage 1: `1 2 3`, `2 3 4`, `3 3 4`.
+- **Allowance** +0x135c, set by the band check `FUN_00445750`: beyond far → f0 + f4 + f8 (band 4); mid–far → f0 + f4
+  (3); near–mid and inside near → f0 (2, 1).
+- **Queue:** every frame each zombie that is shown (+0x34 bit 1), not dead (0x4000000) and without +0x1370 bit
+  0x8000000 registers (`FUN_00420720`, from FUN_00442460 after posing) with key trunc(distance to the player × 10)
+  (@004dd5d4), at most 14. The task `FUN_004207c0` radix-sorts them nearest first (`FUN_004208a0`, stable) and sets
+  **+0x1321 = place** (index) and **+0x1322 = place among those not backing off** (+0x34 bit 0x20000000; others 0xE).
+- **Behaviour 1** (approach), bands 2–4, after turning: allowance ≤ place → **behaviour 5**, with +0x1370 bit 21 =
+  @004f1334[(rand >> 4) % 10] (1 1 1 1 1 1 1 0 0 0). **Behaviour 5 `FUN_004446c0`:** motion set entry [bit 21]
+  (blend 10, rand % 5 start), turn to the player 0x40 a frame, place < allowance → 1. **Behaviour 2** asks for the
+  attack slot only with place < allowance and +0x1322 < 3 (and no cool-down +0x1340 — not ported).
+- Effect: Stage 1's first fight (1 2 3) lets only the nearest zombie into the near band; the others wait at the
+  middle band until it is typed. The port's tests had "every zombie takes a turn" — that was our own behaviour.
+- The last enemy to die (flag 0x800000, attackers = 1 at its death) holds the fight until its body has sunk;
+  bodies that started dying earlier may still be sinking when the fight ends.
+
+## Attack timer DAT_005ea728 (ported 2026-11-24; user: the first attack comes later in the original)
+
+- `FUN_004b14c0` = DAT_005ea728 == 0 — the first check of the attack-slot request `FUN_00444e90`: while the timer
+  runs, no zombie may start an attack. `FUN_004b1410(case)`: 0 → 0; 1 → −1 (not below 0; every frame from the main
+  update `FUN_00472030`); 2 → @005ea674[DAT_00a3c1e0 (setting, default 2)][rank] (setting 2: 390 390 360 330 300 270
+  270 270 270 240 240 210 210 180 180 150 frames; mode 6 with game mode 3/4: @005ea67c); 3 → at least 0x78.
+- Case 2 (restart): a word box takes its word (`FUN_004b1ef0`), a word is completed (`FUN_004b32f0`, result bit
+  0x80, six places), a hit counts (`FUN_004846d0`), and others not in Stage 1's ported set (`FUN_00453e10`,
+  `FUN_0048b230`, `FUN_00496d60`, `FUN_004971b0`, `FUN_00497210`, `FUN_004973a0`, `FUN_004a4330`, `FUN_004a83c0`).
+  Case 0 (attack at once): `FUN_00439d70`, `FUN_00446cf0`, the thrower `FUN_00448310` / `FUN_00448400` — not yet.
+- Earlier notes called it "word pick delay" — wrong. Port: `restartAttackTimer` / `tickPlayers` (core/player.ts).
+- Also: zombies start +0x1370 = (short) record word 8 (+0x20, obj +0x131a) | 0x60000000 (FUN_00441d80); Stage 1's
+  words are all 0. Behaviour 2's cool-down +0x1340 comes only from behaviour 19 (FUN_004467c0); +0x1370 bit 0x400
+  (one idle cycle before asking) only for skeleton 2 (FUN_00441f90).

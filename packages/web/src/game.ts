@@ -43,7 +43,7 @@ import {
   type Mat4,
   type PolModel,
 } from '@ttotd/formats';
-import { CANCEL_KEY, createObject, CrtRand, FightCamera, hurtPlayer, startLives, tickPlayers, type AimEntry, OPENING_CAR_MODELS, Sky, TitleCard, WordBoxes, WordDeck, type GameObject, type MotionLib, type World } from '@ttotd/engine';
+import { CANCEL_KEY, CrtRand, FrameStepper, hurtPlayer, startLives, OPENING_CAR_MODELS, Sky, TitleCard, WordBoxes, WordDeck, type GameObject, type MotionLib, type World } from '@ttotd/engine';
 import { Assets } from './assets';
 import type { GameFS } from './ingest/gamefs';
 import { patchedModel } from './gl/patch';
@@ -68,9 +68,10 @@ interface Game {
   camIds: number[];
   player: EventPlayer;
   world: World;
-  objects: GameObject[];
-  /** Spawn records already turned into objects. */
-  spawned: number;
+  /** The frame step shared with the simulation tests (engine core/frame.ts). */
+  stepper: FrameStepper;
+  /** Live objects (the stepper's, without their record types). */
+  readonly objects: GameObject[];
 
   acc: number;
   last: number;
@@ -81,15 +82,9 @@ interface Game {
   frozen?: boolean;
   /** A status line to keep showing (e.g. a debug start that fell back). */
   note?: string;
-  /** The fight camera, last frame's registrations and whether the fight's enemies were all gone. */
-  fightCam: FightCamera;
-  aims: AimEntry[];
-  over: boolean;
   view?: { view: Mat4; eye: [number, number, number]; game: Mat4 };
   /** Word boxes of the enemies. */
   boxes: WordBoxes;
-  /** Typed keys waiting for their frame. */
-  keys: string[];
 }
 
 let game: Game | undefined;
@@ -236,14 +231,6 @@ export async function startGame(fs: GameFS, stage = 1, at = 0, block = 0) {
     pe: a.pe,
     say: (id) => player.say(id, 'civilian: '),
     route: (n) => player.setRoute(n),
-    spawn: (rec, parent) => {
-      const obj = createObject(rec, world, parent);
-      if (obj && game) {
-        game.objects.push(obj);
-        game.boxes.add(obj, rec.type);
-      }
-      return obj;
-    },
   };
   // Word files the stage's script can ask for (event op 0x61: groups 0 and 2), decoded up front.
   const wordFiles = new Map<string, WordEntry[]>();
@@ -262,12 +249,22 @@ export async function startGame(fs: GameFS, stage = 1, at = 0, block = 0) {
     block = 0;
   }
   player.start(block);
-  game = { stage, areas, sky: new Sky(readSkyTable(a.pe)), camFile, camIds: slot.ids, player, world, objects: [], spawned: 0, acc: 0, last: performance.now(), enter: false, bars: 0, boxes: new WordBoxes(a.pe, deck), keys: [], fightCam: new FightCamera(a.pe), aims: [], over: false, note };
+  const boxes = new WordBoxes(a.pe, deck);
+  const stepper = new FrameStepper(player, world, boxes, (id, t) => {
+    const k = slot.ids.indexOf(id);
+    return k < 0 ? undefined : camFile.sample(k, t);
+  }, a.pe);
+  game = {
+    stage, areas, sky: new Sky(readSkyTable(a.pe)), camFile, camIds: slot.ids, player, world, stepper, boxes,
+    get objects() {
+      return stepper.objects.map((o) => o.obj);
+    },
+    acc: 0, last: performance.now(), enter: false, bars: 0, note,
+  };
   // debug: the running game for inspection from the console / test scripts
   if (new URLSearchParams(location.search).has('dev')) (window as unknown as { ttotdGame?: Game }).ttotdGame = game;
   for (let i = 0; i < at; i++) {
-    player.step();
-    stepObjects(game, false);
+    stepFrame(game, false);
     // a motion requested this frame: wait for it, as real-time play would have it a frame or two later
     if (pendingLoads.size) await Promise.all([...pendingLoads]);
     if (my !== token) return;
@@ -326,64 +323,21 @@ function frame(now: number) {
     g.acc -= 1;
     const enter = g.enter;
     g.enter = false;
-    if (enter) g.player.skip();
-    g.player.step();
-    stepObjects(g, enter);
+    stepFrame(g, enter);
   }
   draw(g);
 }
 
-/** The game camera for the current shot (keeps the last one between shots). */
-function updateCamera(g: Game) {
-  const shot = g.player.shot;
-  const local = shot ? g.camIds.indexOf(shot.pathId) : -1;
-  if (local < 0) return;
-  // the fight camera (core/fightcam.ts): aim at the enemies, then turn back; the fight ends once it is back
+/** One game frame (FrameStepper.step, shared with the tests), then what only PLAY needs: bars, sky, view. */
+function stepFrame(g: Game, enter: boolean) {
   const p = g.player;
-  const mode = shot!.fight !== undefined && !p.fightDone ? (g.over ? 'return' : 'fight') : 'path';
-  const r = g.fightCam.step(g.camFile.sample(local, shot!.t), mode, g.aims);
-  if (mode === 'return' && r.back) p.endFight();
-  const c = cameraFromSample(r.cam);
-  const game = cameraView(c);
-  g.view = { view: mul(game, D3D_VIEW_FLIP), eye: c.eye, game };
-  g.world.camYaw = c.yaw;
-}
-
-/** Object tasks after the event script, once per frame, in spawn order; the sky task first. */
-function stepObjects(g: Game, enter: boolean) {
-  const p = g.player, w = g.world;
   g.bars = Math.min(1, Math.max(0, g.bars + (p.skippable ? 1 : -1) / CINE_SLIDE));
-  updateCamera(g);
-  if (g.view) {
-    g.sky.update(p.skyRow, p.skyMode, g.view.eye);
-    w.eye = g.view.eye;
-    w.view = g.view.game;
+  g.stepper.step(enter);
+  const c = g.stepper.camera;
+  if (c) {
+    g.view = { view: mul(g.world.view, D3D_VIEW_FLIP), eye: c.eye, game: g.world.view };
+    g.sky.update(p.skyRow, p.skyMode, c.eye);
   }
-  w.inFight = p.shot?.fight !== undefined;
-  g.boxes.applySetup(p.words);
-  w.key = g.keys.shift();
-  w.camPath = p.shot?.pathId ?? -1;
-  w.camTime = p.timer;
-  w.enter = enter;
-  for (; g.spawned < p.spawns.length; g.spawned++) {
-    const rec = p.spawns[g.spawned]!;
-    const obj = createObject(rec, w);
-    if (obj) {
-      g.objects.push(obj);
-      g.boxes.add(obj, rec.type);
-    }
-  }
-  w.active = 0;
-  w.aims = [];
-  for (const o of g.objects) if (!o.dead) o.update(w);
-  g.boxes.update(w);
-  tickPlayers(w); // FUN_00451f20: rank update, grace timers
-  // FUN_0040cda0: the fight is over once no enemy is left (not dying, nothing registered) — the camera then turns
-  // back to the path and ends the fight (updateCamera)
-  g.aims = w.aims;
-  g.over = w.inFight && w.attackers === 0 && w.active === 0;
-  g.objects = g.objects.filter((o) => !o.dead);
-  w.frame++;
 }
 
 function draw(g: Game) {
@@ -397,7 +351,6 @@ function draw(g: Game) {
   if (canvas.width !== w || canvas.height !== h) { canvas.width = w; canvas.height = h; }
 
   const p = g.player;
-  updateCamera(g);
   const sl = p.light;
   const fog = sl.fog ? { color: sl.fogColor } : (false as const);
   // The exe clears every frame to black (ID3DXContext SetClearColor(0, 0, 0, 1) once at start-up, Clear(3)
@@ -501,11 +454,11 @@ function setStatus(text: string) {
 window.addEventListener('keydown', (e) => {
   if ($('game').hidden) return;
   // Esc cancels the word being typed (the exe's key ')'); with nothing to cancel it leaves PLAY.
-  if (e.key === 'Escape' && game && game.world.targets[0] !== -1) game.keys.push(CANCEL_KEY);
+  if (e.key === 'Escape' && game && game.world.targets[0] !== -1) game.stepper.keys.push(CANCEL_KEY);
   else if (e.key === 'Escape') quitGame();
   else if (e.key === 'Enter' && game && !e.repeat) game.enter = true;
   // Typing: printable keys, one per game frame (the exe reads one key per frame, DAT_00818015)
-  else if (game && e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) game.keys.push(e.key.toUpperCase());
+  else if (game && e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) game.stepper.keys.push(e.key.toUpperCase());
   else return;
   e.preventDefault();
 });

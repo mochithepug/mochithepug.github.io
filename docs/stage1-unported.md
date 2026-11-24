@@ -27,7 +27,7 @@ Status: **G** = changes gameplay (a scene plays wrongly or cannot finish), **P**
 
 | Op | Uses (blocks) | Status | What it is (if known) |
 |---|---|---|---|
-| 0x0F attack_counts | 7 (0,1,2,4,10) | G | how many zombies may attack (DAT_00a3b7f0..); we allow one at a time |
+| ~~0x0F attack_counts~~ | 7 (0,1,2,4,10) | done 2026-11-24 | zombies allowed per distance band (queue + behaviour 5) |
 | 0x0D spawn variant | 1 (block 1) | ? | spawns a type 0x25 object (scenery) |
 | 0x10 | 15 (1,2,3,4,6,8,9,14) | ? | pointer to a run-time address |
 | 0x1A | 14 | ? | pointer to a small parameter block (1.0, 152.0, 0x26 …) |

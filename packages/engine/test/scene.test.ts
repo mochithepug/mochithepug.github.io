@@ -68,7 +68,7 @@ describe.skipIf(!dir)('Stage 1 opening with the ported objects (real data)', () 
   });
 
   it('the daemon: rooftop, motion 0x448 at camera time 70, hidden for the title card, path 1, flies off, gone at path 50 time 400', () => {
-    const { daemon } = run(60 * 30);
+    const { s, daemon } = run(60 * 30);
     const first = daemon[0]!;
     expect(first.pos.map(Math.round)).toEqual([-406, 153, 142]); // on the rooftop
     expect(first.motion).toBe(1102); // record +0x26
@@ -81,7 +81,9 @@ describe.skipIf(!dir)('Stage 1 opening with the ported objects (real data)', () 
     expect(daemon.some((d) => d.motion === 1099)).toBe(true); // camera time 240 on path 50
     const flying = b1.filter((d) => d.pos[1]! > 100);
     expect(flying.length).toBeGreaterThan(0); // rises on path 50
-    expect(daemon[daemon.length - 1]!.dead).toBe(true);
+    // gone at path 50 time 400: dropped from the objects (as in PLAY) well before the end of the run
+    expect(daemon[daemon.length - 1]!.f).toBeLessThan(60 * 30 - 1);
+    expect(s.objects.some((o) => o.obj instanceof Daemon)).toBe(false);
   });
 
   it('the first wave: three znsam2 zombies (one-player list), waiting motions, feet on the ground', () => {
@@ -103,20 +105,47 @@ describe.skipIf(!dir)('Stage 1 opening with the ported objects (real data)', () 
     }
   });
 
-  it('the first wave takes turns attacking: one at a time, swing 0x42e hits for 9, back off 0x429, slot freed', () => {
-    const s = loadScene(dir!, 1, 0, 60 * 40);
-    let maxAttackers = 0;
-    const swung = new Set<number>();
-    for (let f = 0; f < 60 * 60; f++) {
+  it('the attack timer (DAT_005ea728): no zombie starts an attack until it runs out after the last word appears', () => {
+    const s = loadScene(dir!, 1, 0, Infinity);
+    let lastPick = -1, firstAttack = -1;
+    for (let f = 0; f < 60 * 45 && firstAttack < 0; f++) {
       s.step();
-      const zs = s.objects.map((o) => o.obj).filter((o): o is Zombie => o instanceof Zombie);
-      const attacking = zs.filter((z) => z.behaviour === 3 || z.behaviour === 4);
-      maxAttackers = Math.max(maxAttackers, attacking.length);
-      zs.forEach((z, i) => z.behaviour === 3 && z.rig.motion === 0x42e && swung.add(i));
+      if (s.world.wordPickedFrame === s.world.frame - 1) lastPick = f;
+      if (s.objects.some((o) => (o.obj as unknown as { behaviour?: number }).behaviour === 3)) firstAttack = f;
     }
-    expect(maxAttackers).toBe(1); // one attack slot for the player
-    expect(swung.size).toBe(3); // every zombie gets a turn
-    expect(s.hits.length).toBeGreaterThanOrEqual(3);
+    expect(lastPick).toBeGreaterThan(0);
+    expect(firstAttack - lastPick).toBeGreaterThanOrEqual(360); // 390 at rank 0–1, 360 at rank 2 (@005ea674[2])
+  });
+
+  it('the first wave (event op 0x0F 1 2 3): only the nearest comes in to attack, the others wait (behaviour 5) further out; the next comes in once it is typed', () => {
+    const s = loadScene(dir!, 1, 0, Infinity);
+    const zombies = () => s.objects.map((o) => o.obj).filter((o): o is Zombie => o instanceof Zombie);
+    let first: Zombie | undefined, maxAttackers = 0;
+    for (let f = 0; f < 60 * 45 && !first; f++) {
+      s.step();
+      first = zombies().find((z) => z.behaviour === 3);
+    }
+    expect(first).toBeDefined();
+    expect(s.world.attackCounts).toEqual([1, 2, 3]);
+    for (let f = 0; f < 120; f++) s.step();
+    const e = s.world.eye;
+    const others = zombies().filter((z) => z !== first);
+    expect(others.length).toBe(2);
+    for (const z of others) {
+      expect(z.behaviour).toBe(5); // wait: too far back in the queue for the near band (allowance 1)
+      expect(Math.hypot(z.place.pos[0] - e[0], z.place.pos[2] - e[2])).toBeGreaterThan(30);
+    }
+    s.type(s.boxes.boxes.find((b) => b.owner === (first as unknown))!.word!);
+    let next: Zombie | undefined;
+    for (let f = 0; f < 60 * 20 && !next; f++) {
+      s.step();
+      const zs = zombies();
+      maxAttackers = Math.max(maxAttackers, zs.filter((z) => z.behaviour === 3 || z.behaviour === 4).length);
+      next = zs.find((z) => z !== first && z.behaviour === 3);
+    }
+    expect(next).toBeDefined(); // the queue moved up
+    expect(maxAttackers).toBeLessThanOrEqual(1); // one attack slot for the player
+    expect(s.hits.length).toBeGreaterThanOrEqual(1);
     for (const h of s.hits) expect([h.player, h.hit, h.damage]).toEqual([0, 1, 9]);
   });
 
@@ -126,7 +155,7 @@ describe.skipIf(!dir)('Stage 1 opening with the ported objects (real data)', () 
     expect(me.lives).toBe(3); // @004f2ba0[2]
     const counted: { frame: number; rank: number }[] = [];
     let lastHits = 0, rankBefore = 0;
-    for (let f = 0; f < 60 * 40 && me.lives > 0; f++) {
+    for (let f = 0; f < 60 * 120 && me.lives > 0; f++) {
       rankBefore = s.world.words!.rank;
       s.step(); // nobody types: the zombies keep hitting
       if (me.hits > lastHits) {
@@ -136,7 +165,8 @@ describe.skipIf(!dir)('Stage 1 opening with the ported objects (real data)', () 
     }
     expect(counted.length).toBe(3); // three lives, then 0 (game over not ported)
     expect(me.lives).toBe(0);
-    for (let i = 1; i < counted.length; i++) expect(counted[i]!.frame - counted[i - 1]!.frame).toBeGreaterThanOrEqual(0x5a);
+    // after a hit the attack timer restarts (≥ 150 frames at any rank, FUN_004b1410(2)) before the next attack can start
+    for (let i = 1; i < counted.length; i++) expect(counted[i]!.frame - counted[i - 1]!.frame).toBeGreaterThanOrEqual(150);
     // a second hit within the grace time does not count
     const t = loadScene(dir!, 1, 0, Infinity), p = t.world.players![0]!;
     expect([hurtPlayer(t.world, 0), hurtPlayer(t.world, 0), p.lives]).toEqual([true, false, 2]);
@@ -149,16 +179,20 @@ describe.skipIf(!dir)('Stage 1 opening with the ported objects (real data)', () 
   it('the fight ends when its enemies are dead (FUN_0040cda0), not before — last body sinks first (flag 0x800000)', () => {
     const s = loadScene(dir!, 1, 0, Infinity);
     let fightFrames = 0, words: string[] = [], over = -1, lastSunk = -1;
+    let lastKilled: Zombie | undefined;
     for (let f = 0; f < 60 * 70 && over < 0; f++) {
       s.step();
       if (s.world.inFight) fightFrames++;
       const shown = s.boxes.boxes.filter((b) => b.shown);
       if (!words.length && shown.length === 3 && fightFrames > 60 * 20) {
         words = shown.map((b) => b.word!);
+        lastKilled = shown[shown.length - 1]!.owner as unknown as Zombie; // its word is typed last
         s.type(words.join('')); // after 20 s of fighting: no hold ends it any more
       }
       const zs = s.objects.map((o) => o.obj).filter((o): o is Zombie => o instanceof Zombie);
-      if (words.length && lastSunk < 0 && zs.length && zs.every((z) => z.dead)) lastSunk = f;
+      // the last one killed (flag 0x800000, the last enemy) keeps the fight going until its body has sunk and it is
+      // dropped from the objects; bodies that started dying earlier may still be sinking
+      if (lastKilled && lastSunk < 0 && !zs.includes(lastKilled)) lastSunk = f;
       if (s.player.log.some((e) => e.text.startsWith('fight over'))) over = f;
     }
     expect(fightFrames).toBeGreaterThan(60 * 20);
@@ -380,29 +414,28 @@ describe.skipIf(!dir)('Stage 1 opening with the ported objects (real data)', () 
     expect(s.boxItems().length).toBe(3 * (9 + 4)); // frame pieces + two lines of two letters
   });
 
-  it('the first wave walks up to the player (behaviour 1, walk 0x437) and stands at the near band facing them', () => {
-    const s = loadScene(dir!, 1, 0, 60 * 30);
+  it('the first wave walks up (behaviour 1, walk 0x437); the nearest stands at the near band facing the player, the others wait facing it', () => {
+    const s = loadScene(dir!, 1, 0, Infinity);
     const seen = new Set<number>();
-    let zombies: Zombie[] = [];
-    for (let f = 0; f < 60 * 45; f++) {
+    let stander: Zombie | undefined;
+    for (let f = 0; f < 60 * 45 && !stander; f++) {
       s.step();
-      zombies = s.objects.map((o) => o.obj).filter((o): o is Zombie => o instanceof Zombie);
-      for (const z of zombies) if (z.behaviour === 1) seen.add(z.rig.motion);
-      if (zombies.length && zombies.every((z) => z.behaviour >= 2 && z.behaviour <= 4)) break; // all arrived (one may attack at once)
+      const zs = s.objects.map((o) => o.obj).filter((o): o is Zombie => o instanceof Zombie);
+      for (const z of zs) if (z.behaviour === 1) seen.add(z.rig.motion);
+      stander = zs.find((z) => z.behaviour === 2);
     }
+    expect(seen.has(0x437)).toBe(true);
+    expect(stander).toBeDefined();
     for (let f = 0; f < 30; f++) s.step();
-    zombies = zombies.filter((z) => z.behaviour === 2);
-    expect(zombies.length).toBeGreaterThanOrEqual(2);
-    expect(seen.has(0x437)).toBe(true); // (the waiting motion is still reported while blending out)
     const e = s.world.eye;
-    for (const z of zombies) {
-      expect(z.behaviour).toBe(2);
-      expect(z.rig.motion).toBe(0x408); // idle of znsam2's set
-      const d = Math.hypot(z.place.pos[0] - e[0], z.place.pos[2] - e[2]);
-      expect(d).toBeGreaterThan(24);
-      expect(d).toBeLessThan(27); // near band 25
+    const facing = (z: Zombie) => {
       const off = (heading(z.place.pos[0] - e[0], z.place.pos[2] - e[2]) - z.place.angles[1]) & 0xffff;
-      expect(Math.min(off, 0x10000 - off)).toBeLessThan(0x400); // facing the player (within ~6°)
-    }
+      return Math.min(off, 0x10000 - off);
+    };
+    const d = Math.hypot(stander!.place.pos[0] - e[0], stander!.place.pos[2] - e[2]);
+    expect(d).toBeGreaterThan(10);
+    expect(d).toBeLessThan(27); // inside the near band (25)
+    for (const z of s.objects.map((o) => o.obj).filter((o): o is Zombie => o instanceof Zombie && o.behaviour === 5))
+      expect(facing(z)).toBeLessThan(0x400); // waiting ones turn to the player (FUN_00437250)
   });
 });

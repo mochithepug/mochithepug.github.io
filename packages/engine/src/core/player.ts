@@ -27,6 +27,18 @@ export function startLives(pe?: PeImage, setting = 2): number {
   return pe ? (pe.u16(0x004f2ba0 + setting * 2) << 16) >> 16 : 3;
 }
 
+/**
+ * The attack timer DAT_005ea728 (FUN_004b1410): while it is above 0 no zombie may start an attack (FUN_00444e90 →
+ * FUN_004b14c0). Restarted (case 2) to @005ea674[life/word setting 2][rank] frames — 390 390 360 330 300 270 …
+ * 150 for ranks 0–15 — when a word box gets its word (FUN_004b1ef0), when a word is completed (FUN_004b32f0) and
+ * when a hit counts (FUN_004846d0); counted down 1 a frame (case 1, from the main update FUN_00472030).
+ */
+export function restartAttackTimer(w: World) {
+  const pe = w.pe;
+  const rank = w.words?.effectiveRank ?? 0;
+  w.attackTimer = pe ? pe.i32(pe.u32(0x005ea674 + 2 * 4) + rank * 4) : 390;
+}
+
 /** FUN_004846d0: an attack reaches player `p`. Returns whether it counted. */
 export function hurtPlayer(w: World, p: number): boolean {
   const s = w.players?.[p];
@@ -35,6 +47,7 @@ export function hurtPlayer(w: World, p: number): boolean {
   s.hits++;
   w.words?.adjustRank(-2);
   s.grace = 0x5a;
+  restartAttackTimer(w);
   if (!w.inFight && s.lives < 1) s.lives = 1;
   return true;
 }
@@ -42,5 +55,6 @@ export function hurtPlayer(w: World, p: number): boolean {
 /** FUN_00451f20, once a frame: the rank update (+2 every 0x708 frames instead of +1 with ≥ 4 lives), grace timers. */
 export function tickPlayers(w: World) {
   w.words?.tick(w.players?.[0]?.lives ?? 0);
+  w.attackTimer = Math.max(0, (w.attackTimer ?? 0) - 1); // FUN_004b1410(1)
   for (const s of w.players ?? []) s.grace = Math.max(0, s.grace - 1);
 }

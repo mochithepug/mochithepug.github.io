@@ -479,3 +479,19 @@ player; FUN_0044c080 ported in full (start states per behaviour). Event op 0x46 
 count DAT_00a3e7a8 with segment flag 0x80000) ported — block 7 was releasing its fight before it started. The fight
 camera now counts as done outside fights. Verified: tests (both outcomes, the zombies reach behaviour 3); PLAY from
 block 9, saved: 9 → 7 → 8 → 4.
+
+### Shared frame step + zombie queue (2026-11-24)
+**Delivered:** `engine/core/frame.ts` (FrameStepper): one frame step for PLAY and the simulation tests (they had
+drifted: no Enter in tests, dead objects kept, PLAY stepped the fight camera again in every draw). Event op 0x0F
+and the zombie queue: zombies allowed per distance band, behaviour 5 (wait), the attack-slot conditions of
+behaviour 2. In the first fight only the nearest zombie comes in; the others wait further out until it is typed.
+**Verified:** tests (rewritten first-wave tests, fight end following the last one killed); PLAY screenshot of the
+first fight (one attacking, two waiting at ~38).
+**To check against the original (user):** that the first fight's zombies come in one at a time.
+
+### Attack timer (2026-11-24)
+**User:** in the original the first zombie waits a while before attacking. **Found:** the global attack timer
+DAT_005ea728 — no attack may start until it runs out; it restarts at 390 frames (rank 0–1, down to 150) whenever a
+word box gets its word, a word is completed or a hit counts. Ported. **Verified:** test (first attack ≥ 360 frames
+after the last word appears; hits ≥ 150 frames apart); PLAY: 392 frames from the last word to the first swing.
+Also: the zombie's +0x1370 starts from the record (word 8 | 0x60000000).

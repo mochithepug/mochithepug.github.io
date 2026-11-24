@@ -4,6 +4,7 @@ export * from './core/rig.ts';
 export * from './core/rand.ts';
 export * from './core/fightcam.ts';
 export * from './core/player.ts';
+export * from './core/frame.ts';
 export * from './objects/t10-civilian.ts';
 export * from './objects/t22-daemon.ts';
 export * from './objects/t26-opencar.ts';

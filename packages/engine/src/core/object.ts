@@ -29,6 +29,13 @@ export interface DrawItem {
 }
 
 /** Motions by global id: frame counts from the exe table, data once loaded. */
+/** A zombie in the queue: its distance key and where its places go (+0x1321 all, +0x1322 not backing off). */
+export interface QueueEntry {
+  key: number;
+  backingOff: boolean;
+  setPlaces(all: number, ready: number): void;
+}
+
 export interface MotionLib {
   /** Length in 60 Hz frames (@00503510). */
   frames(id: number): number;
@@ -96,6 +103,12 @@ export interface World {
   active: number;
   /** This frame's registrations with their aim points (FUN_004205d0, for the fight camera — core/fightcam.ts). */
   aims?: AimEntry[];
+  /** DAT_005ea728: frames before any zombie may start an attack (core/player.ts restartAttackTimer). */
+  attackTimer?: number;
+  /** Zombies allowed per distance band (event op 0x0F, DAT_00a3b7f0..). */
+  attackCounts?: number[];
+  /** This frame's zombie queue (FUN_00420720): ranked nearest first at the start of the next frame (FUN_004207c0). */
+  queue?: QueueEntry[];
   /** Civilians still in play (DAT_00a3e7a8): +1 at set-up, −1 once at a 0x80000 segment or when removed. */
   civilians?: number;
   /** Player states (lives, grace — core/player.ts); index = player. */
