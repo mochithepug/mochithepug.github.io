@@ -43,7 +43,7 @@ import {
   type Mat4,
   type PolModel,
 } from '@ttotd/formats';
-import { CANCEL_KEY, createObject, CrtRand, OPENING_CAR_MODELS, Sky, TitleCard, WordBoxes, WordDeck, type GameObject, type MotionLib, type World } from '@ttotd/engine';
+import { CANCEL_KEY, createObject, CrtRand, FightCamera, hurtPlayer, startLives, tickPlayers, type AimEntry, OPENING_CAR_MODELS, Sky, TitleCard, WordBoxes, WordDeck, type GameObject, type MotionLib, type World } from '@ttotd/engine';
 import { Assets } from './assets';
 import type { GameFS } from './ingest/gamefs';
 import { patchedModel } from './gl/patch';
@@ -79,6 +79,12 @@ interface Game {
   bars: number;
   /** Frozen on a frame (debug `at`): keep drawing, no stepping. */
   frozen?: boolean;
+  /** A status line to keep showing (e.g. a debug start that fell back). */
+  note?: string;
+  /** The fight camera, last frame's registrations and whether the fight's enemies were all gone. */
+  fightCam: FightCamera;
+  aims: AimEntry[];
+  over: boolean;
   view?: { view: Mat4; eye: [number, number, number]; game: Mat4 };
   /** Word boxes of the enemies. */
   boxes: WordBoxes;
@@ -88,7 +94,7 @@ interface Game {
 
 let game: Game | undefined;
 let renderer: Renderer | undefined;
-let assets: { fs: GameFS; assets: Assets; motions: MotionLib } | undefined;
+let assets: { fs: GameFS; assets: Assets; motions: ReturnType<typeof motionLibrary> } | undefined;
 let token = 0;
 let raf = 0;
 let skipSign: HTMLCanvasElement | undefined;
@@ -110,17 +116,31 @@ async function loadModel(a: Assets, id: number) {
 /** Motion loads in flight (the debug fast-forward waits for them). */
 const pendingLoads = new Set<Promise<unknown>>();
 
-/** Motions by id, loaded from mot/ on first use (undefined until loaded; rigs hold their pose meanwhile). */
-function motionLibrary(a: Assets): MotionLib {
+/**
+ * Motions by id. Every mot/ file is read before play (`preload`, as the exe has its motion banks in memory), so a
+ * motion is there on the frame it is first asked for — a late one would start its blend from stale root data and
+ * snap the character back (the first civilian's fall). Files not preloaded still load on first use.
+ */
+function motionLibrary(a: Assets): MotionLib & { preload(): Promise<void> } {
   const infos = new Map(readMotionTable(a.pe).map((m) => [m.id, m]));
   const cache = new Map<string, Motion | null>();
+  const files = new Map<string, Uint8Array>();
   return {
+    async preload() {
+      const names = [...new Set([...infos.values()].map((m) => m.file))].filter((f) => !files.has(f) && a.fs.has(`mot/${f}`));
+      await Promise.all(names.map(async (f) => files.set(f, await a.file(`mot/${f}`))));
+    },
     frames: (id) => infos.get(id)?.frames ?? 1,
     get(id, joints) {
       const key = `${id}/${joints}`;
       if (cache.has(key)) return cache.get(key) ?? undefined;
       cache.set(key, null);
       const info = infos.get(id);
+      const ready = info && files.get(info.file);
+      if (info && ready) {
+        if (motionFits(ready, info, joints)) cache.set(key, new Motion(ready, info, joints));
+        return cache.get(key) ?? undefined;
+      }
       if (info && a.fs.has(`mot/${info.file}`)) {
         const load = a.file(`mot/${info.file}`).then((file) => {
           if (motionFits(file, info, joints)) cache.set(key, new Motion(file, info, joints));
@@ -133,8 +153,11 @@ function motionLibrary(a: Assets): MotionLib {
   };
 }
 
-/** `at`: fast-forward this many 60 Hz frames before showing (for exact screenshots). */
-export async function startGame(fs: GameFS, stage = 1, at = 0) {
+/**
+ * `at`: fast-forward this many 60 Hz frames before showing (for exact screenshots). `block`: start at this event
+ * block (debug) — the blocks on the way are not played, only their lasting state is set (EventPlayer.prime).
+ */
+export async function startGame(fs: GameFS, stage = 1, at = 0, block = 0) {
   quitGame();
   const my = ++token;
   $('game').hidden = false;
@@ -145,6 +168,8 @@ export async function startGame(fs: GameFS, stage = 1, at = 0) {
     assets = { fs, assets: a, motions: motionLibrary(a) };
   }
   const a = assets.assets;
+  await assets.motions.preload();
+  if (my !== token) return;
   renderer ??= new Renderer($<HTMLCanvasElement>('game-canvas'));
 
   const areas = readStageAreas(a.pe, stage);
@@ -168,7 +193,7 @@ export async function startGame(fs: GameFS, stage = 1, at = 0) {
     dialogue: (id) => readDialogue(a.pe, id, 0) ?? readDialogue(a.pe, id, 2),
     common,
     holdFrames: Infinity, // the fight camera finishes by endFight() (FUN_0040cda0's rule)
-    enemyCounts: () => ({ enemies: game?.world.enemies ?? 0, attackers: game?.world.attackers ?? 0 }),
+    enemyCounts: () => ({ enemies: game?.world.enemies ?? 0, attackers: game?.world.attackers ?? 0, civilians: game?.world.civilians ?? 0 }),
   });
   await loadSkipSign(a);
   await loadTitle(a, stage);
@@ -196,7 +221,9 @@ export async function startGame(fs: GameFS, stage = 1, at = 0) {
     rand: () => rng.next(),
     attackTable: (sk, set) => readAttackTable(a.pe, sk, set),
     attackSlots: [0, 0],
-    hitPlayer: () => {}, // damage: 10d
+    hitPlayer: (p) => void hurtPlayer(world, p), // FUN_004846d0: a life, rank −2 (core/player.ts)
+    players: [{ lives: startLives(a.pe), grace: 0, hits: 0 }],
+    civilians: 0,
     view: identity(),
     projScale: 240 * cameraProjection(0x1d3b, 4 / 3)[5]!,
     inFight: false,
@@ -206,6 +233,17 @@ export async function startGame(fs: GameFS, stage = 1, at = 0) {
     enemies: 0,
     attackers: 0,
     active: 0,
+    pe: a.pe,
+    say: (id) => player.say(id, 'civilian: '),
+    route: (n) => player.setRoute(n),
+    spawn: (rec, parent) => {
+      const obj = createObject(rec, world, parent);
+      if (obj && game) {
+        game.objects.push(obj);
+        game.boxes.add(obj, rec.type);
+      }
+      return obj;
+    },
   };
   // Word files the stage's script can ask for (event op 0x61: groups 0 and 2), decoded up front.
   const wordFiles = new Map<string, WordEntry[]>();
@@ -218,8 +256,13 @@ export async function startGame(fs: GameFS, stage = 1, at = 0) {
   if (my !== token) return;
   const deck = new WordDeck(a.pe, (name) => wordFiles.get(name), rng, stage - 1);
   world.words = deck;
-  player.start(0);
-  game = { stage, areas, sky: new Sky(readSkyTable(a.pe)), camFile, camIds: slot.ids, player, world, objects: [], spawned: 0, acc: 0, last: performance.now(), enter: false, bars: 0, boxes: new WordBoxes(a.pe, deck), keys: [] };
+  let note = '';
+  if (block > 0 && !player.prime(block).length) {
+    note = `Stage ${stage} has no block ${block} reachable from the start — playing from the beginning.`;
+    block = 0;
+  }
+  player.start(block);
+  game = { stage, areas, sky: new Sky(readSkyTable(a.pe)), camFile, camIds: slot.ids, player, world, objects: [], spawned: 0, acc: 0, last: performance.now(), enter: false, bars: 0, boxes: new WordBoxes(a.pe, deck), keys: [], fightCam: new FightCamera(a.pe), aims: [], over: false, note };
   // debug: the running game for inspection from the console / test scripts
   if (new URLSearchParams(location.search).has('dev')) (window as unknown as { ttotdGame?: Game }).ttotdGame = game;
   for (let i = 0; i < at; i++) {
@@ -234,7 +277,7 @@ export async function startGame(fs: GameFS, stage = 1, at = 0) {
     game.frozen = true;
     await new Promise((r) => setTimeout(r, 1500));
   }
-  setStatus('');
+  setStatus(note);
   raf = requestAnimationFrame(frame);
 }
 
@@ -295,7 +338,12 @@ function updateCamera(g: Game) {
   const shot = g.player.shot;
   const local = shot ? g.camIds.indexOf(shot.pathId) : -1;
   if (local < 0) return;
-  const c = cameraFromSample(g.camFile.sample(local, shot!.t));
+  // the fight camera (core/fightcam.ts): aim at the enemies, then turn back; the fight ends once it is back
+  const p = g.player;
+  const mode = shot!.fight !== undefined && !p.fightDone ? (g.over ? 'return' : 'fight') : 'path';
+  const r = g.fightCam.step(g.camFile.sample(local, shot!.t), mode, g.aims);
+  if (mode === 'return' && r.back) p.endFight();
+  const c = cameraFromSample(r.cam);
   const game = cameraView(c);
   g.view = { view: mul(game, D3D_VIEW_FLIP), eye: c.eye, game };
   g.world.camYaw = c.yaw;
@@ -326,10 +374,14 @@ function stepObjects(g: Game, enter: boolean) {
     }
   }
   w.active = 0;
+  w.aims = [];
   for (const o of g.objects) if (!o.dead) o.update(w);
   g.boxes.update(w);
-  // FUN_0040cda0: the fight is over once no enemy is left (not dying, nothing registered)
-  if (w.inFight && w.attackers === 0 && w.active === 0) p.endFight();
+  tickPlayers(w); // FUN_00451f20: rank update, grace timers
+  // FUN_0040cda0: the fight is over once no enemy is left (not dying, nothing registered) — the camera then turns
+  // back to the path and ends the fight (updateCamera)
+  g.aims = w.aims;
+  g.over = w.inFight && w.attackers === 0 && w.active === 0;
   g.objects = g.objects.filter((o) => !o.dead);
   w.frame++;
 }
@@ -412,8 +464,11 @@ function placeOverlay(g: Game, canvas: HTMLCanvasElement) {
   drawTitle(g, rect);
   const sub = p.subtitle;
   $('game-subtitle').textContent = sub ? sub.speech.lines[sub.line]?.text ?? '' : '';
+  // debug line until the real HUD (lives display, score) is ported
+  const me = g.world.players?.[0], deck = g.world.words;
+  $('game-debug').textContent = me && deck ? `lives ${me.lives}${me.lives <= 0 ? ' (game over not ported)' : ''} · rank ${deck.effectiveRank} · word level ${deck.level === 0 ? '0 (two-letter)' : deck.level}` : '';
   if (p.done) setStatus(`End of Stage ${g.stage} so far — Esc to quit`);
-  else setStatus('');
+  else setStatus(g.note ?? '');
 }
 
 /** The chapter title card's sprites, centred on their 640×480 points (FUN_004ac0e0 with anchor flags 10). */

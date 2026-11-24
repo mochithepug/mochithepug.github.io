@@ -7,10 +7,12 @@
  *   pick(slot, flags, hp) FUN_004b1f80: category by the owner's word flags / hp (FUN_004b2400), a random index
  *                         not among the last 16 picks (FUN_004b19f0), accepted when its first key differs from
  *                         every other box slot's (FUN_004b23a0 / FUN_004020a0; 14 slots).
- *   rank                  DAT_00a3b856 (FUN_00437c60 / FUN_00451ff0): starts at 1, +1 every 0x708 frames,
- *                         0–15, capped at 12 in Stage 1.
+ *   rank                  DAT_00a3b856 (FUN_00437c60 / FUN_00451ff0): starts at 1 (a fresh save, one player:
+ *                         @004f43cc[0] −3 + 4 per player), +1 every 0x708 frames (+2 with ≥ 4 lives), plus
+ *                         the pending change DAT_00a11d14 (−2 per hit, core/player.ts); 0–15; when it drops the
+ *                         0x708 timer restarts; read capped at 12 in Stage 1.
  * Not ported: category 0's special picks (FUN_004b1f80 for hp-1 enemies), the event-mode list (DAT_00a3bac0),
- * DAT_00839d08 filters, rank changes from play (DAT_00a11d14) and the +2 with four or more lives.
+ * DAT_00839d08 filters, the starting rank from the save's clear count (DAT_00a118b0[stage] → @004f43cc).
  */
 import { readBuiltinWords, readWordLevelTables, wordFileName, wordLevel, type PeImage, type WordEntry } from '@ttotd/formats';
 import type { CrtRand } from './rand.ts';
@@ -57,9 +59,28 @@ export class WordDeck {
     return Math.max(0, Math.min(cap, this.rank));
   }
 
-  /** FUN_00451ff0's timer part, once per game frame. */
-  tick(frame: number) {
-    if (frame > 0 && frame % 0x708 === 0) this.rank = Math.min(15, this.rank + 1);
+  /** DAT_00a11d14: rank change waiting for the next update (−2 per hit). */
+  private rankPending = 0;
+  /** DAT_00a3b43c: the rank timer (starts at 1, FUN_00409f70; restarts when the rank drops). */
+  private rankTimer = 1;
+  /** The level of the current word set-up (0: the built-in two-letter words) — for the debug line. */
+  level = 0;
+
+  adjustRank(delta: number) {
+    this.rankPending += delta;
+  }
+
+  /** FUN_00451ff0 (+ FUN_00451f20's timer), once a frame; `lives` = player 1's. */
+  tick(lives = 0) {
+    const before = this.rank;
+    let r = this.rank;
+    if (this.rankTimer % 0x708 === 0) r += lives >= 4 ? 2 : 1;
+    r += this.rankPending;
+    this.rankPending = 0;
+    r = Math.max(0, Math.min(15, r));
+    if (r < before) this.rankTimer = 0;
+    this.rank = r;
+    this.rankTimer++;
   }
 
   private list(category: number): WordEntry[] {
@@ -87,11 +108,13 @@ export class WordDeck {
     if (budget === -2) {
       const files = this.groupSize(group);
       const level = this.randomIndex(0, files) + 1;
+      this.level = level;
       if (group === 2) this.forceDefault = true;
       this.useFile(group, level);
       return;
     }
     const level = wordLevel(this.tables, budget, this.effectiveRank);
+    this.level = level;
     if (level === 0) this.category = 1;
     else this.useFile(group, level);
   }

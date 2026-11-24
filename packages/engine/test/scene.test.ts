@@ -1,6 +1,6 @@
 /** Ported objects in Stage 1 against the user's install (skipped unless TTOTD_DIR is set). */
 import { describe, expect, it } from 'vitest';
-import { blendAngles, Daemon, heading, OpeningCar, OPENING_CAR_MODELS, TitleCard, turnTowards, Zombie } from '../src/index.ts';
+import { blendAngles, Civilian, hurtPlayer, Daemon, heading, OpeningCar, OPENING_CAR_MODELS, TitleCard, turnTowards, Zombie } from '../src/index.ts';
 import { loadScene } from './scene.ts';
 
 const dir = process.env.TTOTD_DIR;
@@ -120,6 +120,32 @@ describe.skipIf(!dir)('Stage 1 opening with the ported objects (real data)', () 
     for (const h of s.hits) expect([h.player, h.hit, h.damage]).toEqual([0, 1, 9]);
   });
 
+  it('hits cost a life and lower the word rank by 2 (FUN_004846d0 / FUN_00451ff0); 0x5A frames of grace', () => {
+    const s = loadScene(dir!, 1, 0, Infinity);
+    const me = s.world.players![0]!;
+    expect(me.lives).toBe(3); // @004f2ba0[2]
+    const counted: { frame: number; rank: number }[] = [];
+    let lastHits = 0, rankBefore = 0;
+    for (let f = 0; f < 60 * 40 && me.lives > 0; f++) {
+      rankBefore = s.world.words!.rank;
+      s.step(); // nobody types: the zombies keep hitting
+      if (me.hits > lastHits) {
+        counted.push({ frame: f, rank: rankBefore });
+        lastHits = me.hits;
+      }
+    }
+    expect(counted.length).toBe(3); // three lives, then 0 (game over not ported)
+    expect(me.lives).toBe(0);
+    for (let i = 1; i < counted.length; i++) expect(counted[i]!.frame - counted[i - 1]!.frame).toBeGreaterThanOrEqual(0x5a);
+    // a second hit within the grace time does not count
+    const t = loadScene(dir!, 1, 0, Infinity), p = t.world.players![0]!;
+    expect([hurtPlayer(t.world, 0), hurtPlayer(t.world, 0), p.lives]).toEqual([true, false, 2]);
+    for (let i = 0; i < 0x5a; i++) t.step();
+    expect(hurtPlayer(t.world, 0)).toBe(true);
+    // each counted hit: rank −2 on the next update (never below 0)
+    expect(s.world.words!.rank).toBeLessThanOrEqual(Math.max(0, counted[0]!.rank - 2 * 3 + 2));
+  });
+
   it('the fight ends when its enemies are dead (FUN_0040cda0), not before — last body sinks first (flag 0x800000)', () => {
     const s = loadScene(dir!, 1, 0, Infinity);
     let fightFrames = 0, words: string[] = [], over = -1, lastSunk = -1;
@@ -138,7 +164,8 @@ describe.skipIf(!dir)('Stage 1 opening with the ported objects (real data)', () 
     expect(fightFrames).toBeGreaterThan(60 * 20);
     expect(over).toBeGreaterThan(0);
     expect(lastSunk).toBeGreaterThan(0);
-    expect(over - lastSunk).toBeLessThanOrEqual(2); // ends right after the last body is gone
+    expect(over - lastSunk).toBeGreaterThan(0); // not before the last body is gone …
+    expect(over - lastSunk).toBeLessThanOrEqual(120); // … then the camera turns back to the path (FUN_0040ce90)
     expect([s.world.attackers, s.world.enemies]).toEqual([0, 0]);
   });
 
@@ -239,6 +266,106 @@ describe.skipIf(!dir)('Stage 1 opening with the ported objects (real data)', () 
     expect(rose[1]!.t).toBeLessThanOrEqual(306);
     expect(rose.every((r) => r.fight === 6 && r.t >= 265)).toBe(true);
     expect(ops.some((t) => t.startsWith('camera path 52, time 306'))).toBe(true); // the stage moves on
+  });
+
+  /** Block 1 with a typing bot; `saveHer`: type the second civilian's zombie as soon as it shows. */
+  const civilianRun = (saveHer: boolean) => {
+    const s = loadScene(dir!, 1, 1, Infinity);
+    let busy = 0;
+    let killedAt = -1, firstAt = -1, secondKind = -1, herLog: string[] = [];
+    let chased = false;
+    for (let f = 0; f < 5200 && !s.player.done; f++) {
+      s.step();
+      if (busy > 0) busy--;
+      if (s.world.inFight && s.world.targets[0] === -1 && !busy) {
+        // ordinary zombies at once; a civilian's attacker once she is dead (or the second one's at once if saving)
+        const b = s.boxes.boxes.find((x) => {
+          if (!x.shown || x.typed !== 0) return false;
+          const p = (x.owner as Zombie).parent as Civilian | undefined;
+          return !p || (p.flags & 0x4000000) !== 0 || (saveHer && p.kind === 1);
+        });
+        if (b) {
+          s.type(b.word!);
+          busy = b.word!.length + 2;
+        }
+      }
+      for (const o of s.objects) {
+        if (o.obj instanceof Zombie && (o.obj as unknown as { behaviour: number }).behaviour === 0x22 && o.obj.place.pos[0] > -79) chased = true;
+        if (!(o.obj instanceof Civilian)) continue;
+        const c = o.obj;
+        if (c.kind === 0) {
+          if (firstAt < 0) firstAt = f;
+          if (killedAt < 0 && c.log.includes('killed')) killedAt = f;
+        } else {
+          secondKind = c.kind;
+          herLog = c.log;
+        }
+      }
+    }
+    return { s, firstAt, killedAt, secondKind, herLog, chased };
+  };
+
+  it('civilians (block 1): the first is killed by her zombie (behaviour 35, kill frame 64); the second dies if her zombie is not typed', () => {
+    const { s, firstAt, killedAt, secondKind, herLog, chased } = civilianRun(false);
+    expect(firstAt).toBeGreaterThan(0);
+    expect(killedAt - firstAt).toBeGreaterThan(40); // the lunge reaches her on frame 64 of motion 0x33d
+    expect(killedAt - firstAt).toBeLessThan(90);
+    expect(secondKind).toBe(1);
+    expect(chased).toBe(true); // behaviour 34: her zombie runs after her
+    expect(herLog).toContain('segment 0x140100 passed over'); // FUN_00480860: her "if hit" script is kept …
+    expect(herLog).toContain('killed'); // … so the grab kills her
+    expect(s.player.log.some((e) => e.text === 'block 1 done → block 10')).toBe(true); // route 0
+  });
+
+  it('civilians (block 1): the second is saved when her zombie is typed in time — route 1 (block 9)', () => {
+    const { s, herLog } = civilianRun(true);
+    expect(herLog.some((l) => l.startsWith('rescued'))).toBe(true);
+    expect(herLog).not.toContain('killed');
+    expect(herLog).toContain('route 1');
+    expect(s.player.log.some((e) => e.text === 'block 1 done → block 9')).toBe(true);
+  });
+
+  /** Block 9 (the man at the well) with a typing bot; `saveHim`: type his zombies too. */
+  const manRun = (saveHim: boolean) => {
+    const s = loadScene(dir!, 1, 9, Infinity);
+    let busy = 0, log: string[] = [];
+    const seen = { hidden: false, chased: false, paused: false, attackedPlayer: false };
+    for (let f = 0; f < 1200 && !s.player.done; f++) {
+      s.step();
+      if (busy > 0) busy--;
+      if (s.world.inFight && s.world.targets[0] === -1 && !busy) {
+        const b = s.boxes.boxes.find((x) => x.shown && x.typed === 0 && (saveHim || !(x.owner as Zombie).parent));
+        if (b) {
+          s.type(b.word!);
+          busy = b.word!.length + 2;
+        }
+      }
+      const c = s.objects.map((o) => o.obj).find((o): o is Civilian => o instanceof Civilian);
+      if (!c) continue;
+      log = c.log;
+      for (const z of c.attackers as unknown as { behaviour: number; hidden: boolean }[]) {
+        if (z.behaviour === 39 && z.hidden) seen.hidden = true;
+        if (z.behaviour === 0x22) seen.chased = true;
+        if (z.behaviour === 0x2d) seen.paused = true;
+        if (z.behaviour === 3) seen.attackedPlayer = true;
+      }
+    }
+    return { s, log, seen };
+  };
+
+  it('the man at the well (block 9): hidden zombies (39) released by his script into the chase (op 0x1A 34 2); killed if not typed — a short pause (45), then they come for the player', () => {
+    const { s, log, seen } = manRun(false);
+    expect(seen).toEqual({ hidden: true, chased: true, paused: true, attackedPlayer: true });
+    expect(log).toContain('release 2 attacker(s) as behaviour 34');
+    expect(log).toContain('killed');
+    expect(s.player.flags[35]).toBe(1); // his "if hit" script sets the flag block 9 waits for
+  });
+
+  it('the man at the well (block 9): typed in time → rescued, route 1, block 9 goes on', () => {
+    const { s, log } = manRun(true);
+    expect(log.some((l) => l.startsWith('rescued'))).toBe(true);
+    expect(log).not.toContain('killed');
+    expect(s.player.log.some((e) => /^block 9 done/.test(e.text))).toBe(true);
   });
 
   it('word boxes: the first wave gets three category-1 words with different first letters, shown in the fight', () => {

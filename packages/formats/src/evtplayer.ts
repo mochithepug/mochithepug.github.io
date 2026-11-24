@@ -57,7 +57,7 @@ export interface EvtPlayerOptions {
   /** Frames a fight (camera mode 0x21) lasts here when there is no gameplay (viewers); Infinity with gameplay. */
   holdFrames?: number;
   /** Enemy counts for event ops 0x43 / 0x44 (DAT_00a39546, DAT_00a3ba4a); none = 0 (viewers). */
-  enemyCounts?: () => { enemies: number; attackers: number };
+  enemyCounts?: () => { enemies: number; attackers: number; civilians?: number };
   /** Route choice for branching blocks (index into the rule targets). */
   choice?: number;
   /** Game mode for 0x73 (DAT_00a3e760). */
@@ -83,7 +83,7 @@ export class EventPlayer {
   /** Camera commands queued or running (DAT_00a11924). */
   pendingCamera = 0;
   /** The fight camera is finished (DAT_00a3946d): set by `endFight()` (or the viewer hold), cleared by a new fight. */
-  fightDone = false;
+  fightDone = true; // 1 outside fights (the path camera sets it every frame: FUN_0040da30); a fight clears it
   /** Camera queue release (DAT_00a10c10 via op 0x33): 2 = take one more command while a fight holds the queue. */
   private release = 0;
   /** Path stored by a flag-2 shot, for a moving fight (6 / 7) to follow. */
@@ -160,6 +160,79 @@ export class EventPlayer {
       this.fightDone = true;
       this.add('camera', 'fight over (no enemies left)');
     }
+  }
+
+  /**
+   * Debug start part-way through a stage: a route of blocks from block 0 to `block` (following the block rules;
+   * a branch's other targets are tried too), and the lasting state those blocks would leave — stage area, sky,
+   * light (fades finished), word set-up, approach bands — without running them; the route choice is the one taken
+   * at the last branch on the way. Returns that route (empty: `block` cannot be reached). Then call `start(block)`.
+   */
+  prime(block: number): number[] {
+    const rules = this.opts.rules, n = this.ef.blocks().length;
+    // breadth-first over the block rules, remembering how each block was reached
+    const from = new Map<number, { prev: number; choice: number }>([[0, { prev: -1, choice: -1 }]]);
+    const todo = [0];
+    while (todo.length && !from.has(block)) {
+      const b = todo.shift()!;
+      const r = rules[b];
+      const next: [number, number][] =
+        r?.kind === 0 ? [[r.targets[0]!, -1]] : r?.kind === 1 ? r.targets.map((t, i) => [t, i] as [number, number]) : r?.kind === 2 ? [[b + 1, -1]] : [];
+      for (const [t, choice] of next)
+        if (t >= 0 && t < n && !from.has(t)) {
+          from.set(t, { prev: b, choice });
+          todo.push(t);
+        }
+    }
+    if (!from.has(block)) return [];
+    const route: number[] = [];
+    let choice = 0, branched = false;
+    for (let t = block; from.get(t)!.prev >= 0; t = from.get(t)!.prev) {
+      const f = from.get(t)!;
+      route.unshift(f.prev);
+      // walking back, the first branch met is the last one taken
+      if (!branched && f.choice >= 0) [choice, branched] = [f.choice, true];
+    }
+    for (const b of route)
+      for (const sc of this.ef.blocks()[b]?.scripts ?? []) {
+        let cmds;
+        try {
+          cmds = this.ef.script(sc);
+        } catch {
+          continue;
+        }
+        for (const c of cmds) {
+          const w = (k: number) => c.words[k]!;
+          if (c.op === 0x20) this.setLight(w(1), [w(2), w(3), w(4)]);
+          else if (c.op === 0x23) this.startFade(w(1), w(2), w(3));
+          else if (c.op === 0x18) [this.light.pitch, this.light.yaw] = [w(1), w(2)];
+          else if (c.op === 0x0e) {
+            const fl = (k: number) => new Float32Array(new Uint32Array([w(k)]).buffer)[0]!;
+            this.bands[w(1)] = [fl(2), fl(3), fl(4)];
+          } else if (c.op === 0x61) this.words = { group: w(1), budget: w(2), count: this.words.count + 1 };
+          else if (c.op === 0x29) this.area = (w(1) << 16) >> 16;
+          else if (c.op === 0x1b) this.skyRow = w(1);
+          else if (c.op === 0x1c) this.skyMode = w(1);
+        }
+      }
+    for (let k = 0; k < 100000 && this.fades.size; k++) this.stepFades();
+    this.opts.choice = choice;
+    this.log = [];
+    this.add('flow', `primed from blocks ${route.join(' → ')} (route ${choice})`);
+    return route;
+  }
+
+  /** Show dialogue `id` as a subtitle (event op 0x2D; a civilian's op 0x1D → FUN_004239a0). */
+  say(id: number, who = '') {
+    const speech = this.opts.dialogue(id);
+    if (speech && !this.skipping) this.subtitle = { speech, remaining: speech.durationFrames, line: 0 };
+    this.add('say', `${who}say ${id}${speech ? `: “${speech.lines.map((l) => l.text).join(' / ')}”` : ''}`);
+  }
+
+  /** The route for branching blocks (DAT_00a3b264 — a civilian's op 0x19 sets it, e.g. 1 when she is killed). */
+  setRoute(n: number) {
+    if (this.opts.choice !== n) this.add('flow', `route ${n}`);
+    this.opts.choice = n;
   }
 
   /** Enter pressed (`skip_task`): skip the scene if it is skippable. Returns whether a skip started. */
@@ -291,6 +364,26 @@ export class EventPlayer {
           advance();
           break;
         }
+        case 0x46: {
+          // FUN_0044f840: yield once, then wait until at most N civilians are still in play (DAT_00a3e7a8) and the
+          // fight camera is finished (DAT_00a3946d)
+          const n = w(1);
+          if (this.skipping) {
+            this.yieldFlag = false;
+            advance();
+            break;
+          }
+          if (!this.yieldFlag) {
+            this.yieldFlag = true;
+            this.add('flow', `wait until at most ${n} civilians in play`);
+            return;
+          }
+          const c = this.opts.enemyCounts?.();
+          if (!((c?.civilians ?? 0) <= n && this.fightDone)) return;
+          this.yieldFlag = false;
+          advance();
+          break;
+        }
         case 0x31:
           // FUN_0044f390: camera back to path mode (camera mode 1) — the fight is over for the camera queue
           if (this.shot?.fight !== undefined) {
@@ -340,10 +433,7 @@ export class EventPlayer {
           break;
         }
         case 0x2d: {
-          const id = w(1) & 0xffff;
-          const speech = this.opts.dialogue(id);
-          if (speech && !this.skipping) this.subtitle = { speech, remaining: speech.durationFrames, line: 0 };
-          this.add('say', `say ${id}${speech ? `: “${speech.lines.map((l) => l.text).join(' / ')}”` : ''}`);
+          this.say(w(1) & 0xffff);
           advance();
           break;
         }
@@ -420,7 +510,8 @@ export class EventPlayer {
         case 0x07:
         case 0x09:
         case 0x0a:
-        case 0x0b: {
+        case 0x0b:
+        case 0x0c: {
           // 0x03 / 0x07 spawn only with one / two players (FUN_0041fdd0 / FUN_0041fe10, DAT_00a3b844)
           if ((op === 0x03 && this.opts.players !== 1) || (op === 0x07 && this.opts.players !== 2)) {
             advance();

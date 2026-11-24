@@ -11,6 +11,11 @@
  * Behaviours 13 `FUN_00446080` (lie frozen with no word box — flags 0x4100 — until a camera time, get up with 0x411,
  * then 15 or 1), 14 `FUN_00446290` (walk for a number of frames, then 1) and 15 `FUN_00446350` (walk a set
  * distance, then 1). Not ported: 33 `FUN_00448310` (throw a held item: a projectile with its own word box).
+ * Behaviour 35 (0x23) `FUN_0044a310`: a scripted attack on its civilian (parent, +0x1398) — steps from the record
+ * (extra data +4, or +8 when re-entered as the next behaviour, FUN_0044c1c0): {motion, start, repeats, kill frame};
+ * on the kill frame the civilian gets the dead flag 0x4000000 (FUN_0044c380: scream); after the last step, or
+ * once the civilian is dead, the next behaviour (FUN_0044c080). Not ported: 0x22 / 0x24 / 0x28 / 0x2d, the
+ * per-motion flags (0x1ca / 0x1ce / 0x1d2 / 0xb4 …).
  * Typed letters (FUN_004b32f0 → FUN_00442f30): each correct letter hits a body part (FUN_004b3a60) and shows the
  * impact effect (FUN_004430d0 → FUN_00411bc0 / FUN_00411ae0); the finished word kills: behaviour 6
  * `FUN_00443d70` (death motion by direction, FUN_00445320; attack slot freed) → 7 `FUN_00443f70` (sinks 0.04 a
@@ -21,7 +26,7 @@
  * (FUN_00444970), the attack cool-down (+0x1340 / +0x136c), being hit, word box, head turning to the player
  * (FUN_00442c60), special part models (FUN_00442510), kind-6 effects, groans and other sounds.
  */
-import { identity, invert, mul, scaleLocal, transformDir, transformPoint, translateLocal, type SpawnRecord } from '@ttotd/formats';
+import { identity, invert, mul, scaleLocal, transformDir, transformPoint, translateLocal, readSteps, type SpawnRecord, type StepEntry } from '@ttotd/formats';
 import { rotationMatrix, toAngle } from '../core/angles.ts';
 import type { DrawItem, GameObject, World } from '../core/object.ts';
 import type { WordOwner } from './wordbox.ts';
@@ -98,7 +103,30 @@ export class Zombie implements GameObject, WordOwner {
   private readonly tail?: Uint8Array;
   private items: DrawItem[] = [];
 
-  constructor(rec: SpawnRecord, w: World) {
+  /** The object that created it (+0x1398): a civilian it attacks. */
+  readonly parent?: GameObject;
+  /** Behaviour 35: step lists (+4 / +8), the list in use and the current step (+0x139c), motion (+0x1324),
+   * repeats (+0x1354), kill frame (+0x1358). */
+  private readonly steps?: [StepEntry[] | undefined, StepEntry[] | undefined];
+  /** Raw data lists (+4 / +8) for behaviours 34 / 40. */
+  private readonly lists?: [Uint8Array | undefined, Uint8Array | undefined];
+  /** Behaviour 34: reach distance (+0x1374) and signal flag (+0x1354); behaviour 40: the point (+0x13c4). */
+  private reach = 0;
+  /** Behaviour 39: not drawn, and the flags to restore when released (+0x1354). */
+  private hidden = false;
+  private savedFlags = 0;
+  private reachSignal = 0;
+  private walkTo: Vec3 = [0, 0, 0];
+  private stepList: StepEntry[] = [];
+  private stepIdx = 0;
+  private stepMotion = 0;
+  private stepRepeats = 0;
+  private killFrame = -1;
+
+  constructor(rec: SpawnRecord, w: World, parent?: GameObject) {
+    this.parent = parent;
+    this.steps = rec.steps;
+    this.lists = rec.lists;
     this.tail = rec.tail;
     const t = rec.tail ?? new Uint8Array(4);
     this.skeleton = (t[0]! << 24) >> 24;
@@ -223,20 +251,103 @@ export class Zombie implements GameObject, WordOwner {
 
   update(w: World) {
     this.takeHits(w);
+    this.runBehaviour(w);
+    for (let k = 0; k < 3; k++) this.place.pos[k] = f32(this.place.pos[k]! + this.vel[k]!);
+    this.rig.pose(this.place);
+    this.items = this.hidden ? [] : this.rig.draw();
+    this.afterPose(w);
+  }
+
+  /** The behaviour table @005a215c for the ported behaviours (others hold still). */
+  private runBehaviour(w: World) {
     if (this.behaviour === 18) this.waitFor(w);
     else if (this.behaviour === 26) this.leap(w);
     else if (this.behaviour === 1) this.approach(w);
     else if (this.behaviour === 2) this.stand(w);
     else if (this.behaviour === 3) this.attack(w);
     else if (this.behaviour === 4) this.backOff(w);
+    else if (this.behaviour === 0x23) this.attackCivilian(w);
+    else if (this.behaviour === 0x22) this.chaseCivilian(w);
+    else if (this.behaviour === 0x28) this.walkToPoint(w);
     else if (this.behaviour === 13) this.riseUp(w);
     else if (this.behaviour === 15) this.walkDistanceThenApproach(w);
     else if (this.behaviour === 14) this.walkFrames(w);
     else if (this.behaviour === 6) this.die(w);
     else if (this.behaviour === 7) this.sink();
-    for (let k = 0; k < 3; k++) this.place.pos[k] = f32(this.place.pos[k]! + this.vel[k]!);
-    this.rig.pose(this.place);
-    this.items = this.rig.draw();
+    else if (this.behaviour === 39) this.waitRelease(w);
+    else if (this.behaviour === 0x2d) this.pauseOverVictim(w);
+  }
+
+  /** Behaviour and state to go back to after behaviour 45 (+0x1358 / +0x135c). */
+  private resumeBehaviour = 1;
+  private resumeState = 0;
+  private pauseTimer = 0;
+
+  /** Save the current behaviour / state and pause in behaviour 45 (the exe's switch to 0x2d). */
+  private pauseThenResume() {
+    this.resumeBehaviour = this.behaviour;
+    this.resumeState = this.state;
+    this.behaviour = 0x2d;
+    this.state = 0;
+  }
+
+  /**
+   * Behaviour 45 (0x2D, FUN_0044bf80): after its civilian died — stand in the idle motion (motion set entry 0) for
+   * 10–20 frames, then go back to the saved behaviour. From behaviour 35 with a step list ending in −1 that is 35
+   * again, which replays the last step and pauses again: the zombie stays over the body until it is typed.
+   */
+  private pauseOverVictim(w: World) {
+    const r = this.rig;
+    if (this.state === 0) {
+      this.pauseTimer = (w.rand() % 0xb) + 10;
+      const idle = w.motionSet(this.skeleton, this.kind)?.[0];
+      if (idle !== undefined && r.motion !== idle) r.blendTo(idle, 0, 10);
+      this.state = 1;
+      this.stepMotion = r.motion;
+    } else if (this.state === 1 && --this.pauseTimer === 0) {
+      this.behaviour = this.resumeBehaviour;
+      this.state = this.resumeState;
+    }
+    if (!(this.flags & 0x40000000) && r.motion !== this.stepMotion && this.stepMotion > 0) r.blendTo(this.stepMotion, 0, 10);
+  }
+
+  /**
+   * Behaviour 39 (FUN_0044b280): hidden (flags | 0x18000: no box, not registered; not drawn — +0x1fc bit 1, rig
+   * +0x1d8) until its civilian releases attackers (civilian op 0x1A: behaviour +0x2c, count +0x2e). Released: that
+   * behaviour from state 0 (run at once), flags back; behaviour 0x31: dead flag, the enemy counts drop (FUN_00445660 /
+   * FUN_00445680) and it is removed (FUN_00437090) the next frame.
+   */
+  private waitRelease(w: World) {
+    const civ = this.parent as { release?: { behaviour: number; count: number } } | undefined;
+    if (this.state === 2) {
+      this.dead = true;
+      return;
+    }
+    if (this.state === 0) {
+      this.savedFlags = this.flags;
+      this.flags = (this.flags | 0x18000) >>> 0;
+      this.hidden = true;
+      this.state = 1;
+    }
+    const rel = civ?.release;
+    if (!rel || rel.count === 0) return;
+    rel.count--;
+    if (rel.behaviour === 0x31) {
+      this.flags = (this.flags | 0x4000000) >>> 0;
+      w.attackers--;
+      w.enemies--;
+      this.state = 2;
+      return;
+    }
+    this.behaviour = rel.behaviour;
+    this.state = 0;
+    this.flags = this.savedFlags;
+    this.hidden = false;
+    this.runBehaviour(w);
+  }
+
+  /** After posing: anchors, sparks, registration, motion counter. */
+  private afterPose(w: World) {
     // FUN_00475420 at joint 1: view- and world-space position; FUN_00436f00(4): world y + 4
     const j = this.rig.joints[1]?.matrix;
     if (j) {
@@ -245,7 +356,12 @@ export class Zombie implements GameObject, WordOwner {
       this.worldAnchor = [world[0], f32(world[1] + 4), world[2]];
     }
     this.drawSparks(w);
-    if (!(this.flags & 0x10000) && !this.dead) w.active++; // FUN_00436f00 → FUN_004205d0
+    if (!(this.flags & 0x10000) && !this.dead) {
+      // FUN_00436f00(4.0) → FUN_004205d0. Aim point +0x100: taken as the hips (where the exe sets it is not found)
+      w.active++;
+      const h = this.rig.rootPosition();
+      w.aims?.push({ pos: [...this.place.pos], aim: [h[0], h[1] + 4, h[2]], slot: this.victim });
+    }
     if (!(this.flags & 0x4000)) this.rig.counter++;
   }
 
@@ -405,6 +521,200 @@ export class Zombie implements GameObject, WordOwner {
       this.releaseAttack(w);
       this.behaviour = 2;
       this.state = 0;
+    }
+  }
+
+  private get parentDead(): boolean {
+    const p = this.parent as { flags?: number } | undefined;
+    return !!p && ((p.flags ?? 0) & 0x4000000) !== 0;
+  }
+
+  /** FUN_0044c1c0: the step list — +8 when the current behaviour is the record's next one, else +4. */
+  private listFor(): StepEntry[] {
+    const next = ((this.tail?.[3] ?? 0) << 24) >> 24;
+    return (this.behaviour === next ? this.steps?.[1] : this.steps?.[0]) ?? [];
+  }
+
+  /** FUN_0044c1e0: flags by the step's kill value. */
+  private killFlags(kill: number) {
+    if (kill === -3) this.flags = (this.flags | 0x100) >>> 0;
+    else if (kill === -2) this.flags = ((this.flags & ~0x2000) | 0x400) >>> 0;
+    else this.flags = (this.flags | 0x2400) >>> 0;
+  }
+
+  /**
+   * FUN_0044c080: the next behaviour (the record's next; back to 1 if that was it), with its start state:
+   * 34 → 1 unless the civilian is already dead (then on again); 35 / 36 → 1 with the step list; 40 → 1, or 1 (the
+   * behaviour) at once when the point is already behind; 41 → 1. Flags 0x2000 / 0x400 / 0x100 cleared unless 34.
+   * Behaviour 1 with record +0xC ≠ −1 becomes 42 in the exe (not ported; Stage 1 has −1).
+   */
+  private nextBehaviour() {
+    const next = ((this.tail?.[3] ?? 0) << 24) >> 24;
+    this.behaviour = this.behaviour === next ? 1 : next;
+    this.state = 0;
+    if (this.behaviour === 0x22) {
+      if (!this.civilianGone()) this.state = 1;
+    } else if (this.behaviour === 0x23 || this.behaviour === 0x24) {
+      this.stepList = this.listFor();
+      this.stepIdx = 0;
+      this.state = 1;
+    } else if (this.behaviour === 0x28) {
+      const L = this.rawList();
+      if (L && this.pointBehind([L.getFloat32(0, true), L.getFloat32(4, true), L.getFloat32(8, true)])) this.behaviour = 1;
+      else this.state = 1;
+    } else if (this.behaviour === 0x29) this.state = 1;
+    // (behaviour 1 with record +0xC ≠ −1 → 42 in the exe: not ported; Stage 1 records have −1)
+    if (this.behaviour !== 0x22) this.flags = (this.flags & 0xffffdaff) >>> 0;
+  }
+
+  /** FUN_0044b3c0: `p` is behind the object (local z > 0). */
+  private pointBehind(p: Vec3): boolean {
+    const d: Vec3 = [p[0] - this.place.pos[0], p[1] - this.place.pos[1], p[2] - this.place.pos[2]];
+    return transformDir(invert(rotationMatrix(this.place.angles)), d)[2]! > 0;
+  }
+
+  /** Load step `stepIdx` (states 0 / 1 of FUN_0044a310). */
+  private loadStep(w: World, first: boolean) {
+    const s = this.stepList[this.stepIdx]!;
+    this.killFlags(s.kill);
+    if (first) this.rig.blendTo(s.motion, s.start, 0);
+    else if (this.rig.motion !== s.motion) this.rig.blendTo(s.motion, s.start, 10);
+    this.stepMotion = s.motion;
+    this.stepRepeats = s.repeats;
+    this.killFrame = s.kill;
+    this.stepIdx++;
+    if (s.kill < 0) this.flags = (this.flags & ~0x10000000) >>> 0;
+    else {
+      w.rand(); // attack voice (FUN_00437ab0 case 3)
+      this.flags = (this.flags | 0x10000000) >>> 0;
+    }
+    this.state = 2;
+  }
+
+  /** FUN_0044c1c0 on the raw lists: +8 when the current behaviour is the record's next one, else +4. */
+  private rawList(): DataView | undefined {
+    const next = ((this.tail?.[3] ?? 0) << 24) >> 24;
+    const b = this.behaviour === next ? this.lists?.[1] : this.lists?.[0];
+    return b ? new DataView(b.buffer, b.byteOffset, b.byteLength) : undefined;
+  }
+
+  /** Steps from the raw list at `off` (behaviour 35 continues with them: +0x139c). */
+  private rawSteps(off: number): StepEntry[] {
+    const next = ((this.tail?.[3] ?? 0) << 24) >> 24;
+    const b = this.behaviour === next ? this.lists?.[1] : this.lists?.[0];
+    return b ? readSteps(b, off) : [];
+  }
+
+  /** FUN_0044c050: once the civilian is dead, the next behaviour (the exe then goes to 0x2d unless that is 0x28). */
+  private civilianGone(): boolean {
+    if (!this.parentDead) return false;
+    this.nextBehaviour();
+    return true;
+  }
+
+  /**
+   * Behaviour 34 (0x22, FUN_0044a100): chase the civilian. List: f32 reach distance, u16 signal, u16 motion,
+   * u16 start frame, then behaviour 35's steps. Steer at her (FUN_00437360, at most 0x1a0 a frame) with the
+   * motion's root motion until within reach → 35 from its first step (and her segment bit 0x800 if signalled).
+   */
+  private chaseCivilian(w: World) {
+    const r = this.rig;
+    const civ = this.parent as (GameObject & { place?: { pos: Vec3 }; signal?(b: number): void }) | undefined;
+    if (this.state === 0 || this.state === 1) {
+      this.flags = (this.flags | 0x400) >>> 0;
+      const L = this.rawList();
+      if (!L) return this.nextBehaviour();
+      this.reach = L.getFloat32(0, true);
+      this.reachSignal = L.getUint16(4, true);
+      const m = L.getUint16(6, true), start = L.getUint16(8, true);
+      if (this.state === 0) r.blendTo(m, start, 0);
+      else if (r.motion !== m) r.blendTo(m, start, 10);
+      this.stepMotion = r.motion;
+      this.stepList = this.rawSteps(10);
+      this.state = 2;
+    } else if (this.state === 2 && civ?.place) {
+      const p = this.place.pos, c = civ.place.pos;
+      if (Math.hypot(p[2] - c[2], p[0] - c[0]) <= this.reach) {
+        if ((this.stepList[0]?.motion ?? 0) < 1) this.nextBehaviour();
+        else {
+          this.behaviour = 0x23;
+          this.state = 1;
+          this.stepIdx = 0;
+          if (this.reachSignal) civ.signal?.(0x800);
+        }
+      } else this.place.angles[1] = turnTowards(this.place.angles[1], heading(p[0] - c[0], p[2] - c[2]), 0x1a0);
+    }
+    if (!(this.flags & 0x40000000) && r.motion !== this.stepMotion && this.stepMotion > 0) r.blendTo(this.stepMotion, 0, 10);
+    // FUN_0044c050: civilian dead → next behaviour, then a pause first (45) unless that is 40
+    if (this.civilianGone() && this.behaviour !== 0x28) this.pauseThenResume();
+  }
+
+  /**
+   * Behaviour 40 (0x28, FUN_0044b460): walk to a point. List: f32 x, y, z, i16 motion, i16 start frame, then
+   * behaviour 35's steps. Once the point is behind it (FUN_0044b3c0: local z > 0): no steps → the next behaviour;
+   * else (civilian alive) → 35 from its first step. (The exe does not steer here: the record faces it there.)
+   */
+  private walkToPoint(w: World) {
+    const r = this.rig;
+    if (this.state === 0 || this.state === 1) {
+      this.flags = (this.flags | 0x2400) >>> 0;
+      const L = this.rawList();
+      if (!L) return this.nextBehaviour();
+      this.walkTo = [L.getFloat32(0, true), L.getFloat32(4, true), L.getFloat32(8, true)];
+      const m = L.getInt16(12, true), start = L.getInt16(14, true);
+      if (r.motion !== m) r.blendTo(m, start, this.state === 0 ? 0 : 10);
+      this.stepMotion = m;
+      this.stepList = this.rawSteps(16);
+      this.state = 2;
+    }
+    if (this.pointBehind(this.walkTo)) {
+      if ((this.stepList[0]?.motion ?? 0) < 1) this.nextBehaviour();
+      else if (!this.civilianGone()) {
+        this.behaviour = 0x23;
+        this.state = 1;
+        this.stepIdx = 0;
+      }
+    }
+    if (!(this.flags & 0x40000000) && r.motion !== this.stepMotion && this.stepMotion > 0) r.blendTo(this.stepMotion, 0, 10);
+  }
+
+  /** Behaviour 35 (0x23, FUN_0044a310): the scripted attack on the civilian. */
+  private attackCivilian(w: World) {
+    const r = this.rig;
+    if (this.state === 0) {
+      this.stepList = this.listFor();
+      this.stepIdx = 0;
+      if (!this.stepList.length || this.stepList[0]!.motion < 1) return this.nextBehaviour();
+      this.loadStep(w, true);
+    } else if (this.state === 1) {
+      if (!this.stepList[this.stepIdx] || this.stepList[this.stepIdx]!.motion < 1) return this.nextBehaviour();
+      this.loadStep(w, false);
+    } else if (this.state === 2) {
+      const p = this.parent as { flags?: number } | undefined;
+      if (p && r.frame === this.killFrame && !this.parentDead) p.flags = ((p.flags ?? 0) | 0x4000000) >>> 0; // + scream
+      const m = r.motion;
+      if ((m === 0x1d2 || m === 0x1ca || m === 0x1ce) && this.parentDead) return this.nextBehaviour();
+      if (r.frame === w.motions.frames(m) - 1) {
+        if (!this.parentDead) {
+          if (--this.stepRepeats === 0) {
+            if ((this.stepList[this.stepIdx]?.motion ?? 0) >= 1) this.state = 1;
+            else this.nextBehaviour();
+          }
+        } else {
+          // FUN_0044c050 was called above: the victim is dead → already the next behaviour; with a list ending in −1
+          // a short pause (45) first, unless that next behaviour is 40
+          this.nextBehaviour();
+          if (this.behaviour !== 0x28 && (this.stepList[this.stepIdx]?.motion ?? -1) === -1) this.pauseThenResume();
+        }
+      }
+    }
+    // keep the step's motion running (FUN_0044a310's tail)
+    if (this.behaviour === 0x23 && !(this.flags & 0x40000000) && r.motion !== this.stepMotion && this.stepMotion > 0) {
+      if (this.stepRepeats < 2) r.blendTo(this.stepMotion, w.motions.frames(r.motion) - 1, 1);
+      else {
+        r.blendTo(this.stepMotion, 0, 10);
+        this.stepRepeats--;
+      }
     }
   }
 

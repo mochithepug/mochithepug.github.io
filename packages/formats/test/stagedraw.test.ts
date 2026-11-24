@@ -38,9 +38,10 @@ describe.skipIf(!dir)('words for fights (real data)', () => {
     expect(readBuiltinWords(pe, 0).map((e) => e.text).join('')).toBe('ABCDEFGHIJKLMNOPQRSTUVWXYZ');
   });
 
-  it('word level (FUN_004b16b0): Stage 1 budgets at rank 1 → category 1 for 25 / 50, files for 100 / 150', () => {
-    expect([25, 50, 100, 150].map((b) => wordLevel(t, b, 1))).toEqual([0, 0, 5, 10]);
-    expect([25, 50, 100, 150].map((b) => wordLevel(t, b, 5))).toEqual([0, 5, 10, 15]);
+  it('word level (FUN_004b16b0): level = trunc((p + 5) × 0.1) — the first civilian scene (100) at rank 1 is level 1 ("Foul", Z000L010)', () => {
+    expect([25, 50, 100, 150, 200, 600].map((b) => wordLevel(t, b, 1))).toEqual([0, 0, 1, 1, 1, 3]);
+    expect([25, 50, 100, 150, 200, 600].map((b) => wordLevel(t, b, 5))).toEqual([0, 1, 1, 2, 2, 6]);
+    expect([25, 50, 100, 150, 200, 600].map((b) => wordLevel(t, b, 12))).toEqual([2, 2, 3, 3, 4, 8]);
     expect(wordFileName(pe, 0, 5)).toBe('Z000L050.bin');
     expect(wordFileName(pe, 0, 20)).toBe('Z000L200.bin');
     expect(wordFileName(pe, 0, 21)).toBeUndefined();

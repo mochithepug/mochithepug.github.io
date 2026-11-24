@@ -231,6 +231,14 @@ export class CharacterRig {
     return blendAngles(a, b, t);
   }
 
+  /** The root joint's world position after `pose` (the hips). */
+  rootPosition(): [number, number, number] {
+    const m = this.joints[0]?.matrix;
+    if (!m) return [0, 0, 0];
+    const p = transformPoint(m, [0, 0, 0]);
+    return [p[0], p[1], p[2]];
+  }
+
   /** One frame: step the motion, apply root motion to `obj`, pose every joint. Call before `counter++`. */
   pose(obj: Placement): PosedJoint[] {
     if (!this.setup()) return this.joints;

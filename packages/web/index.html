@@ -15,6 +15,10 @@
         <button id="reopen" hidden></button>
         <input id="dirinput" type="file" webkitdirectory multiple hidden />
         <button id="play-game" hidden title="Play the game from Stage 1">▶ PLAY</button>
+        <span id="play-from" hidden title="Debug: start part-way — the earlier blocks are not played, only their lasting state (area, sky, light, words) is set">
+          from stage <input id="play-stage" type="number" min="1" max="6" value="1" />
+          block <input id="play-block" type="number" min="0" value="0" />
+        </span>
         <span id="busy" class="muted"></span>
       </div>
     </header>
@@ -264,6 +268,7 @@
         <canvas id="game-skip"></canvas>
         <div id="game-subtitle"></div>
         <div id="game-status"></div>
+        <div id="game-debug" title="Debug: until the real HUD is ported"></div>
       </div>
       <div id="game-help">Enter: skip scene · Esc: quit</div>
     </div>

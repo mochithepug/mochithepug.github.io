@@ -289,3 +289,15 @@
 00445680	fn	enemy_count_dec	DAT_00a39546 − 1 once
 004b0530	fn	word_box_brackets	four spinning bracket models
 0083911c	data	g_player_target	per player: target owner id
+0040d7a0	fn	fightcam_pick_aim	DAT_00a147e0 slots 0/1 else 2/3 → aim DAT_00a394e8 (midpoints), none → path target
+0040cfe0	fn	fightcam_state3	fight: eye from the fight kind, target turned to the aim (FUN_0040e2f0), next speed
+0040ce90	fn	fightcam_return	fight over: eye 1/16 back, target to path (speed 12); aligned → DAT_00a3946d
+0040e2f0	fn	cam_turn_towards	turn look target towards a point by 1/(1+speed) of the angle, 100 units out
+0040e1f0	fn	fightcam_speed	turn speed from the angle left: @005983d4[DAT_00a39478][angle>>7]
+004204f0	fn	fight_slots_build	registrations sorted nearest first → DAT_00a147e0 (attack-slot holders 0–1, others 2+k)
+004205d0	fn	fight_register	register an object (no flag 0x10000) with its distance to the player
+00436f00	fn	obj_register_aim	view pos of +0x100, draw list, +0x104 += height, FUN_004205d0
+004846d0	fn	player_hurt	lives −1, rank pending −2, score −100, grace 0x5A (DAT_00a3b7c8)
+00451ff0	fn	rank_update	per frame: +1/+2 every 0x708, + DAT_00a11d14, clamp 0–15
+00451f20	fn	rank_task	rank update, rank timer, grace countdown
+00409f70	fn	stage_start_rank	rank = @004f43cc[clear count] + 4·players

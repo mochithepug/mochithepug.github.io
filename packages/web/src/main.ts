@@ -64,7 +64,14 @@ async function load(fs: GameFS) {
     initStage(fs, params).catch(showError);
     initEvents(fs, params).catch(showError);
     $('play-game').hidden = false;
-    if (params.get('play') === 'game') startGame(fs, 1, Number(params.get('at') ?? 0)).catch(showError);
+    $('play-from').hidden = false;
+    if (params.get('play') === 'game') {
+      // ?play=game[&stage=S][&block=B][&at=N]
+      const stage = Number(params.get('stage') ?? 1) || 1, block = Number(params.get('block') ?? 0) || 0;
+      $<HTMLInputElement>('play-stage').value = String(stage);
+      $<HTMLInputElement>('play-block').value = String(block);
+      startGame(fs, stage, Number(params.get('at') ?? 0), block).catch(showError);
+    }
   }
   if (params.get('tab')) showTab(params.get('tab')!);
 }
@@ -93,7 +100,8 @@ if (params.has('dev')) {
 
 // --- tabs ------------------------------------------------------------------------------------
 $('play-game').addEventListener('click', () => {
-  if (gamefs) startGame(gamefs).catch(showError);
+  const stage = Number($<HTMLInputElement>('play-stage').value) || 1, block = Number($<HTMLInputElement>('play-block').value) || 0;
+  if (gamefs) startGame(gamefs, stage, 0, block).catch(showError);
 });
 
 for (const b of document.querySelectorAll<HTMLButtonElement>('#tabs .tab')) {

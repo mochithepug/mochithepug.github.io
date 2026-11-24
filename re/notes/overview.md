@@ -691,7 +691,7 @@ Characters have extra **skin models** whose vertices follow two joints, filling 
   `FUN_004b16b0(budget, 0)`: p = budget · DAT_005ea9e4 (0.1; modes 0/1: @0058e410[DAT_00a3c1e0] · K, set in
   FUN_004aea10) · (1.2 unless language DAT_005ea730 = 'A'); p ≤ 15 → p + @005ea6c8[rank]; 15 < p ≤ 30 → p +
   @005ea6d8[rank]; above → p · (1 + @005ea688[rank] · k) with k by band (45/65/85/120/150/180/210/240); clamp
-  [DAT_00839ca8, 2000]; < 3 → 0; level = min(19, trunc(p)). Level < 0 → category 0, 0 → category 1, > 0 →
+  [DAT_00839ca8, 2000]; < 3 → 0; level = min(19, trunc((p + 5) × 0.1)) (corrected 2026-11-24, see "Lives and rank"). Level < 0 → category 0, 0 → category 1, > 0 →
   category 2 with `word/` file @005eaaac[group] + level − 1 (`load_word_list`). Budget −2 = random file of the
   group (FUN_004b4080 count). Stage 1 uses op 0x61 `0 25`, `0 50`, `0 100`, `0 150`, `2 −2`; op 0x0F sets the
   attack counts DAT_00a3b7f0.. (Stage 1: `1 2 3`, `2 3 4`, `3 3 4`).
@@ -799,8 +799,7 @@ Characters have extra **skin models** whose vertices follow two joints, filling 
 - Zombie behaviours 13 `FUN_00446080` (flags 0x4100: frozen, no word box, until camera time ≥ record +4; get-up
   0x411, 0xba for skeletons 0xf–0x11; then 15 with distance = (float)u32 record +8, or 1) and 15 `FUN_00446350`
   (walk — set[2|3], back-off set[4] with flag 0x20000000 — until that distance from the start, then 1).
-- Not ported: the fight camera turning to the active enemies (`FUN_0040d7a0`: look at the first one or two
-  entries of DAT_00a147e0, blend with FUN_0040e2f0), the return blend (FUN_0040ce90), the camera list of mode 0x60
+- Fight camera aim and the return blend: ported 2026-11-24 ("Fight camera aim" below). Not ported: the camera list of mode 0x60
   (FUN_0040df90 / FUN_0040e4a0), DAT_00816f7c.
 
 ## Stage 1 object survey (2026-11-23)
@@ -817,3 +816,153 @@ Every spawn in st1evtbl.bin (ops 0x03 / 0x09 / 0x0A / 0x0B / 0x0C), by type — 
   (FUN_00444e90), throw motion (attack row, blend 4), at the row's frame `FUN_00449980(obj, part)` launches the held
   item as a projectile object (task `FUN_00449d20`, which gets its own word box), `FUN_00448be0`; then 1 (kind ≠ 7) or
   again. Not ported yet.
+- **Correction / decoded (2026-11-23):** op 0x0C (`FUN_00420300` → `FUN_00420240`) spawns with the spawn-record
+  layout into a lighter object (0x1318 bytes; extra data at +0x1310; word flags | 0x20000000). Its types:
+  - **0x10 = civilian in danger** (set-up `FUN_0047fa70`, task `FUN_0047ffc0`, state block 0xc4 at DAT_00818d98):
+    extra data = skeleton (byte +0: hito_fem 37, hito_gal 38, hitoc 32, hito_gal2 39, hito_mario 49, hito_man 46,
+    hito_baba 33), kind (+1, part table @00517ccc), i16 +2 / +4, pointer +8 (stored at rig +0x45c), **count +0xC and
+    pointer(s) +0x10 to spawn records of the attacker(s)** — created with spawn_record, linked +0x1398 = civilian,
+    hp scaled by rank (@00512a24). Stage 1's first: hito_fem + zombie znonoo (skeleton 19, kind 2, behaviour 35
+    `FUN_0044a310` then 1, hp 140, flags 0x8040000). Word flags 0x414 include 0x400 → the civilian shows no box.
+    7 rescues in Stage 1 (blocks 1, 4, 6, 8, 9, 13).
+  - **0x11 = frog** (set-up `FUN_004279f0`, task FUN_00427b50; skeleton i16 +0 = 27, motion i16 +2), single-letter
+    words (0x14, hp 1), counts in DAT_00a39546 / DAT_00a3ba4a, floor-snapped (FUN_00428320). 3 in block 3.
+  - 0x52 (`FUN_0042d020`, 4 objects in the library, no words), 0x12 (`FUN_0042d260`, block 6) — not identified.
+
+## Civilians (ported 2026-11-24: `engine/src/objects/t10-civilian.ts`, zombie behaviour 35)
+
+- Script interpreter `FUN_00481060` (formats/civilian.ts): ~44 commands; a run starts at a segment (0x2C) and
+  stops before the next (op > 0x2B). Segment flags = wait conditions, **any** one advances (`FUN_00480860`):
+  0x1/0x2/0x8 counts ≤ a value, 0x4 attackers left ≤ op 0xB value, 0x100 loops done, 0x200 frame = op 4 value,
+  0x400 timer, 0x2000 event flag op 0x20, 0x10 / 0x20 / 0x40 movement (within op 5 distance / facing / walked past
+  the op 6 point), 0x80 camera path & time, plus the op 9 segment timer. Other segment bits: 0x40000 → she counts
+  as active (clears obj 0x10000), 0x80000 civilian count − 1, 0x4000 frame limit off, **0x10000000 = rescued:
+  stage rescue count + 1, +400 points** (to the rescuer, or both). Ops: 0/1 motion (loops, start), 2 frame limit,
+  5/6/7/0x26 movement, 9 timer, 0xA/0xB/0xC thresholds, 0xE/0xF "if hit" scripts, 0x1C set event flag, 0x1D
+  voice line (FUN_004239a0), 0x21/0x22 sounds, 0x29 obj flags.
+- Per frame `FUN_0047ffc0`: drop attackers with the dead flag (FUN_004820c0), motion loops, segment check, movement
+  (turn ≤ 0x100 towards the target, FUN_00481eb0 / FUN_00481ff0; walking = root motion), being shot by a player
+  (her dead flag, that player −100 / life penalty, FUN_004848a0) or killed (dead flag set by the attacker → the
+  [0x13] script, both players −100); leaving: countdown (record +6) after camera path +2 / time +4, once no
+  attacker is left, or off screen (flag 0x2000000).
+- Attacker behaviour 35 (0x23) `FUN_0044a310`: step list (record +4; +8 when re-entered) of {motion, start,
+  repeats, kill frame}; kill frame → civilian dead flag + scream (FUN_0044c380); then the record's next behaviour
+  (FUN_0044c080). Stage 1 block 1: hito_fem (kind 0, no rescue branch) + znonoo with one step: motion 0x33D from
+  frame 7, kill frame 64 — she cannot be saved ("I don't wanna die"); hito_gal (kind 1, "Please, help him!",
+  dialogue 18) + znsam2b with behaviour 34 (0x22: a chase with float data at +4/+8) then 40 (0x28) — not ported.
+- Kind 0's death script (user: she should move after being killed): segment flags 0x100080 → **0x80 = continue
+  when the camera is at path / time set by op 0xD** (55, 60): motion 417 (fall, 70 frames) then she lies still
+  until the camera, after the fight, reaches path 55 time 60 → motion 416 (229 frames); the stage script says
+  dialogue 16 "I don't wanna die." at path 55 time 100; her record removes her at path 55 time 280. Flag
+  0x40000000 = continue at once (with any player). Now ported.
+- PLAY motions must be in memory when first used: a motion still loading starts its blend (FUN_00475900) from
+  stale root data, and when it arrives the root jumps — the first civilian snapped ~20 units back to where she
+  started running (both at the fall 417 and at 416). The web game now reads every mot/ file before play (5.6 MB),
+  as the exe has its motion banks loaded. Still not ported from FUN_00481970: root motion on only while the segment
+  has 0x100000 (rig +0x64 bit 2), the previous segment's 0x100000 resetting the root x/z to the new motion's start,
+  the 0x8000 / 0x10000 / 0x20000 alignments, the blend length from the segment (+0xe; 0 with 0x200000).
+
+## Fight camera aim (ported 2026-11-24)
+
+- Registration `FUN_004205d0` (from FUN_00436f00(4.0) — zombies FUN_00442460, civilians FUN_0047ffc0): objects
+  without flag 0x10000, at most 14 a frame, key = ftol(distance(+0x40, player DAT_00a396a0 = eye) × @004dd5d4).
+  The task `FUN_004204f0` radix-sorts them nearest first (`FUN_00420640`) into DAT_00a147e0 (16 × {flag, object}):
+  an object holding a player's attack slot (+0x121 = 0/1, set in FUN_00444e90) takes the first free of slots 0–1;
+  the k-th entry otherwise takes slot 2 + k.
+- Aim `FUN_0040d7a0` → DAT_00a394e8: slot 0 (and 1: midpoint ×0.5 @004dd508); else slot 1; else slots 2/3 (one or the
+  midpoint); none → the path target DAT_00a39638 and DAT_005f1c68 = 0 (set to 1 each frame by FUN_0040ca00).
+  Aim point = object +0x100 with y + 4 (FUN_00436f00's argument). **Where +0x100 is written for zombies and
+  civilians was not found** (not a direct store in their code or the rig); the port uses the root joint (hips).
+- Fight state 3 `FUN_0040cfe0`: eye = DAT_00a39620 (the fight kind's eye; 1/16 glide only with DAT_00a39473);
+  look target DAT_00a149f8 turned towards the aim by `FUN_0040e2f0(eye, aim, cur, out, 1, speed)`: in the plane of
+  the two directions, the angle (Sega units, short) × 1 / (1 + speed), new target 100 units out. Next speed:
+  no aim → (char)@00598354 = 12; aim → `FUN_0040e1f0`: angle left (FUN_0040c3d0, ≤ 0x1fff) >> 7 indexes
+  @005983d4[DAT_00a39478 = 1] = @00598314: 64 ×26, 63 56 50 43 36 29 22, then 16.
+- Fight over (state 2) `FUN_0040ce90`: eye += (path eye − eye) / 16 a frame (FUN_0040d5b0), target turned to the
+  path target at speed 12 (FUN_0040d6d0); when signed cos² (FUN_0040c450) > 0.99999 (@004dd898) → DAT_00a3946d = 1
+  (op 0x44 / 0x43 may go on) and the path is sampled directly. Ends ~1 s after the last enemy.
+- Port: `packages/engine/src/core/fightcam.ts` (FightCamera, pickAim, turnLookTowards); objects push `w.aims`;
+  PLAY and the test runner use last frame's registrations and call endFight() when the camera is back.
+
+## Civilian attackers: behaviours 34 and 40 (ported 2026-11-24)
+
+- **34 (0x22) `FUN_0044a100` — chase the civilian.** List (FUN_0044c1c0: +4, or +8 when it is the record's next):
+  f32 reach, u16 signal, u16 motion, u16 start frame, then behaviour 35's steps (+10 → +0x139c). Steers at her
+  (FUN_00437360 → FUN_004371d0, ≤ 0x1a0 a frame) on the motion's root motion; within reach → 35 state 1 (and,
+  with the signal, her segment flags |= 0x800 = that condition met). Her dead flag → next behaviour (FUN_0044c050;
+  then 0x2d unless 0x28 — not ported).
+- **40 (0x28) `FUN_0044b460` — walk to a point.** List: f32 x y z, i16 motion, i16 start, steps (+0x10). Flags
+  |= 0x2400. When the point is behind (FUN_0044b3c0: local z > 0): no steps → next behaviour, else → 35.
+- Library second civilian (kind 1, script @513380): killable only during her first segment (op 0x0E @51333C =
+  motion 409 while motion 425 plays ×3, ~117 frames); the next segment clears it (op 0x0E 0); then she waits for her
+  attacker to be gone → "rescued" segment (0x10000000), runs off (op 6). Her zombie (skeleton 8, 34 → 40): reach 6,
+  chase 1015 at 0.40/frame vs her 425/424 at 0.31/frame from 20 units → reaches her ~6 frames after the window.
+  **Wrong — corrected:** the window does not close there. `FUN_00480860`, once a segment's wait is over, looks at
+  the next segment: `FUN_00480de0` applies only the state parts of its commands (op 0/1 loop count + rig frame,
+  4, 5, 6, 7, 9, 0xA–0xD, 0x20, callbacks) and its own conditions are tested; if met it is passed over **without
+  running** (so not her op 0x0E 0) and the one after is tried; the saved counters ([3], [8], +0x22, [9], [4],
+  +0x12, +0x16, +0x1a) are put back, then FUN_00481060 runs the segment reached. Her 0x140100 (wait: loops done) is
+  passed over → she stays killable until the grab kills her (user: she dies if her zombie is not typed in time).
+- Her outcomes (user-confirmed): saved → "rescued" segment, op 0x19 1 (DAT_00a3b264 = route 1 → block rule 1 picks
+  block 9), op 0x1D 18 "Please, help him!" (FUN_004239a0); killed → motion 409, route stays 0 → block 10 (the man
+  does not come). Op 0x1B (DAT_00a3e7b4) not ported.
+- The record parser now keeps the raw lists (`SpawnRecord.lists`, `readSteps`); `steps` stays behaviour 35's view.
+- Civilian ops 0x21 / 0x22 = voice clip sequence (id, delay → FUN_00495660), not ported (no sound).
+
+## Lives and rank (ported 2026-11-24)
+
+- Starting lives DAT_00a143c6 + p·0x208 = DAT_00a11a5c = @004f2ba0[DAT_00a3c1e1] (1 2 3 4 5; option default 2 →
+  3, FUN_0044e5f0 / FUN_00483e50). +1 (FUN_00484aa0) up to DAT_00a11340, else +300 points.
+- **Hit `FUN_004846d0(p, hit, damage)`** (zombie hit FUN_00445590; `FUN_004848a0` = the same for civilian
+  penalties): skipped while DAT_00a3b7c8[p] (grace) > 0, in mode DAT_00a3b858 = 5, or when FUN_00484850 refuses
+  (mode 6 player states); unless DAT_00a3c22d[p·0x78] (no-damage flag): lives −1, **DAT_00a11d14 −= 2**,
+  FUN_00484b00(p, −100) (score). Then hit effect (DAT_00a14430 / a14432 = damage), statistics (+0x514, +0x534,
+  +0x53a), grace = 0x5A, FUN_004b1410(2) (word pick delay); outside a fight (DAT_00a39448 / 4c ≠ 2) lives ≥ 1.
+- **Rank `FUN_00451ff0`** (per frame from the task FUN_00451f20, which then counts the timer DAT_00a3b43c up while
+  DAT_00a118d0 and the grace timers down): player-count change × 4; every 0x708 timer frames +1, **+2 with ≥ 4
+  lives** (1P: DAT_00a143c6; 2P: sum ≥ 6); + DAT_00a11d14 (then 0); clamp 0–15; dropped → timer 0.
+- Start (FUN_00409f70): rank = @004f43cc[DAT_00a3b99c] + 4 × DAT_00a3b840; timer 1. DAT_00a3b99c = the stage's clear
+  count DAT_00a118b0[stage] (saved, +1 per clear at that level, capped at 4; FUN_0040a030); @004f43cc = −3 −1 1 4 8.
+  Fresh save, one player → 1 (the port's start).
+- The rank only matters when words are set up (event op 0x61 → FUN_004b1510 → FUN_004b16b0), so a hit makes the
+  words of the next set-up easier, not the ones on screen.
+- **Correction:** FUN_004b16b0's last step is level = trunc((p + 5) × 0.1) (@004dd6c4 = 5, @004de3e0 = 0.1, machine
+  code at 0x4b18ed — the decompiled C shows only `__ftol()`); the port had trunc(p), 4–5 levels too hard and
+  jumping 0 → 5 → 10. Stage 1 at rank 1: budgets 25/50 → 0 (two-letter), 100/150/200 → 1, 600 → 3; the first
+  civilian's scene → level 1 = Z000L010 ("Foul" in the user's original screenshot). Levels 1–2 are normal.
+- Port: `packages/engine/src/core/player.ts` (startLives, hurtPlayer, tickPlayers), WordDeck.tick / adjustRank;
+  PLAY shows a debug line (lives · rank · word level). Not ported: game over / continue, score, hit effect.
+
+## Hidden civilian attackers and the pause over a body (ported 2026-11-24)
+
+- **Behaviour 39 `FUN_0044b280`:** state 0 saves the flags (+0x1354), flags |= 0x18000, not drawn (+0x1fc bit 1,
+  rig +0x1d8 byte 1 = 0). Each frame: if the civilian's release count (state +0x2e) ≠ 0 → count −1; release
+  behaviour (state +0x2c) 0x31 → dead flag 0x4000000, FUN_00445660 / FUN_00445680 (counts −1), state 2 → task removed
+  (FUN_00437090; slot DAT_00a3b280 cleared); else behaviour = it, state 0, flags restored, drawn, run at once.
+- **Civilian op 0x1A (behaviour, count):** sets state +0x2c / +0x2e only while attackers are left (+0x1e ≠ 0).
+  The man (kind 2, block 9): `0x1A 34 2` as he appears (both chase him); his "if hit" scripts `0x1A 49 2` (any still
+  hidden are removed) and op 0x1C 35 (block 9 waits for flag 35).
+- **Behaviour 45 (0x2D) `FUN_0044bf80`:** state 0: timer rand % 11 + 10, idle motion (motion set @005a2330 entry 0,
+  blend 10); state 1: timer 0 → back to the saved behaviour / state (+0x1358 / +0x135c). Entered from 34 when the
+  civilian is dead (after FUN_0044c080, unless the next is 0x28) and from 35 at the end of a step motion when the
+  victim is dead: **correction** — FUN_0044c050 has already switched to the next behaviour, so the saved one is that
+  next behaviour (no staying over the body): with a list ending in −1 a 10–20 frame pause first, unless the next is
+  0x28. (User: after killing the man his zombies must come for the player.)
+- **FUN_0044c080 (next behaviour)**: record next (+3), or 1 if already it; start state by the new behaviour — 0x22: 1
+  unless the civilian is already dead (FUN_0044c050, recursive); 0x23 / 0x24: step list (FUN_0044c1c0) → +0x139c,
+  state 1; 0x28: if the list's point is already behind (FUN_0044b3c0) → 1 (state 0), else state 1; 0x29: state 1
+  (+ flag 0x10000 when record +0xC ≠ −1); else 0. Behaviour 1 with record +0xC ≠ −1 → 0x2A (42, not ported; −1 in
+  Stage 1). Flags &= ~0x2500 unless 0x22.
+
+## Civilians in play and event op 0x46 (ported 2026-11-24)
+
+- DAT_00a3e7a8: +1 at civilian set-up (FUN_0047fa70); −1 once (state [1] bit 1) when a segment with 0x80000 starts
+  (FUN_00481060 case 0x2C) or when the civilian is removed (FUN_0047ffc0). Segment condition 8 waits while
+  [9] (op 0xC) < it.
+- **Event op 0x46 N** (`FUN_0044f840`): yield, then wait until DAT_00a3e7a8 ≤ N, DAT_00816f7c ≠ 0 and the fight
+  camera is done (DAT_00a3946d). Block 7: `camera 0x21 [4]`, `op 0x46 0`, `op 0x31 3` — without it the fight was
+  released before it started and the camera stayed held (user: stuck after saving the man).
+- DAT_00a3946d is 1 outside fights (the path camera sets it every frame, FUN_0040da30 / FUN_0040d550); a fight start
+  (FUN_0040d930) clears it. The player's `fightDone` now starts true (starting part-way had it false: a wait at the
+  start of block 9 never passed). Op 0x47 (`FUN_0044f890`): wait until the fight camera is done and nothing is
+  registered (not used in Stage 1).

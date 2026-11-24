@@ -176,7 +176,8 @@ export function readWordLevelTables(pe: PeImage) {
 
 /**
  * `FUN_004b16b0(budget, 0)`: word level for a time budget (event op 0x61) at `rank`. < 0 never here; 0 →
- * category 1 (the built-in two-letter words); 1–19 → word file level. `scale` = DAT_005ea9e4 (0.1 by default),
+ * category 1 (the built-in two-letter words); 1–19 → word file level. The rank-adjusted value p (< 3 → 0) becomes
+ * the level as trunc((p + 5) × 0.1) — read from the machine code at 0x4b18ed; the decompiled C only shows `__ftol()`. `scale` = DAT_005ea9e4 (0.1 by default),
  * language 'A' (no ×1.2).
  */
 export function wordLevel(t: ReturnType<typeof readWordLevelTables>, budget: number, rank: number, scale = 0.1): number {
@@ -191,7 +192,8 @@ export function wordLevel(t: ReturnType<typeof readWordLevelTables>, budget: num
   if (p > 2000) p = 2000;
   if (p <= 0) p = 0; // DAT_00839ca8
   if (p < 3) return 0;
-  return Math.min(19, Math.trunc(p));
+  // the level is (p + 5) × 0.1 (@004dd6c4, @004de3e0 — hidden in the decompiled __ftol), at most 19
+  return Math.min(19, Math.trunc((p + 5) * Math.fround(0.1)));
 }
 
 /** Word flags of an object type (@005a2848): non-zero → `spawn_record` gives it a word box. */

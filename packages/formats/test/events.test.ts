@@ -109,6 +109,21 @@ describe.skipIf(!dir)('event player (Stage 1 block 0)', async () => {
     expect([positioned[0]!.type, positioned[0]!.hp]).toEqual([0x26, 1]);
   });
 
+  it('debug start part-way (prime): route through the block rules, lasting state set, the branch taken', () => {
+    const pe = new PeImage(new Uint8Array(readFileSync(join(dir!, 'Tod_e.exe'))));
+    const ef = new EventFile(new Uint8Array(readFileSync(join(dir!, 'evt', 'st1evtbl.bin'))));
+    const make = () => new EventPlayer(ef, { rules: readBlockRules(pe, 0), dialogue: () => undefined, followBlocks: false, holdFrames: 60 });
+    const p9 = make();
+    expect(p9.prime(9)).toEqual([0, 1]); // block 1 branches: [10, 9]
+    expect(p9.opts.choice).toBe(1);
+    const p1 = make();
+    expect(p1.prime(1)).toEqual([0]);
+    expect(p1.opts.choice).toBe(0);
+    expect(p1.area).not.toBe(0); // block 0 loads a stage area
+    expect(p1.words.count).toBeGreaterThan(0);
+    expect(make().prime(999)).toEqual([]);
+  });
+
   it('Enter during the opening fly-over skips straight to the end of the scene', () => {
     const pe = new PeImage(new Uint8Array(readFileSync(join(dir!, 'Tod_e.exe'))));
     const ef = new EventFile(new Uint8Array(readFileSync(join(dir!, 'evt', 'st1evtbl.bin'))));

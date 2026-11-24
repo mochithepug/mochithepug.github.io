@@ -3,8 +3,10 @@
  * plus a task function called once per frame that updates and draws it; here `update` does the work and
  * `draw` hands back what to render (global model id + world matrix).
  */
+import type { AimEntry } from './fightcam.ts';
+import type { PlayerStatus } from './player.ts';
 import type { WordDeck } from './words.ts';
-import type { AttackTable, CharacterType, Mat4, Motion, ObjectPathSample, SkinPiece, SpawnRecord } from '@ttotd/formats';
+import type { PeImage, AttackTable, CharacterType, Mat4, Motion, ObjectPathSample, SkinPiece, SpawnRecord } from '@ttotd/formats';
 
 /** New position and normal for some vertex records of a skin model (FUN_00490870 / FUN_004908c0). */
 export interface VertexPatch {
@@ -92,6 +94,20 @@ export interface World {
   attackers: number;
   /** Enemies that registered this frame (FUN_004205d0 → the table DAT_00a147e0): those without flag 0x10000. */
   active: number;
+  /** This frame's registrations with their aim points (FUN_004205d0, for the fight camera — core/fightcam.ts). */
+  aims?: AimEntry[];
+  /** Civilians still in play (DAT_00a3e7a8): +1 at set-up, −1 once at a 0x80000 segment or when removed. */
+  civilians?: number;
+  /** Player states (lives, grace — core/player.ts); index = player. */
+  players?: PlayerStatus[];
+  /** A civilian's line (op 0x1D → FUN_004239a0): the owner shows the dialogue. */
+  say?(id: number): void;
+  /** A civilian's route choice (op 0x19 → DAT_00a3b264): which block follows a branching one. */
+  route?(n: number): void;
+  /** The exe, for objects that read their scripts from it (civilians). */
+  pe?: PeImage;
+  /** spawn_record for objects that create others (a civilian's attackers): created, listed, given a word box. */
+  spawn?(rec: SpawnRecord, parent?: GameObject): GameObject | undefined;
 }
 
 export interface GameObject {

@@ -28,7 +28,7 @@ import {
   readMotionTable,
   STAGE_EVENT_FILES,
 } from '@ttotd/formats';
-import { createObject, CrtRand, WordBoxes, WordDeck, type GameObject, type MotionLib, type World } from '../src/index.ts';
+import { createObject, CrtRand, FightCamera, hurtPlayer, startLives, tickPlayers, type AimEntry, WordBoxes, WordDeck, type GameObject, type MotionLib, type World } from '../src/index.ts';
 
 export function loadScene(dir: string, stage = 1, block = 0, holdFrames = 60) {
   const pe = new PeImage(new Uint8Array(readFileSync(join(dir, 'Tod_e.exe'))));
@@ -53,7 +53,7 @@ export function loadScene(dir: string, stage = 1, block = 0, holdFrames = 60) {
       return cache.get(key) ?? undefined;
     },
   };
-  const player = new EventPlayer(ef, { rules: readBlockRules(pe, stage - 1), dialogue: (id) => readDialogue(pe, id, 0), common, followBlocks: false, holdFrames, enemyCounts: () => ({ enemies: world.enemies, attackers: world.attackers }) });
+  const player = new EventPlayer(ef, { rules: readBlockRules(pe, stage - 1), dialogue: (id) => readDialogue(pe, id, 0), common, followBlocks: false, holdFrames, enemyCounts: () => ({ enemies: world.enemies, attackers: world.attackers, civilians: world.civilians ?? 0 }) });
   player.bands = readApproachBands(pe);
   const rng = new CrtRand();
   const hits: { frame: number; player: number; hit: number; damage: number }[] = [];
@@ -78,7 +78,12 @@ export function loadScene(dir: string, stage = 1, block = 0, holdFrames = 60) {
     rand: () => rng.next(),
     attackTable: (sk, set) => readAttackTable(pe, sk, set),
     attackSlots: [0, 0],
-    hitPlayer: (player, hit, damage) => hits.push({ frame: world.frame, player, hit, damage }),
+    hitPlayer: (player, hit, damage) => {
+      hits.push({ frame: world.frame, player, hit, damage });
+      hurtPlayer(world, player);
+    },
+    players: [{ lives: startLives(pe), grace: 0, hits: 0 }],
+    civilians: 0,
     view: identity(),
     projScale: 240 * cameraProjection(0x1d3b, 4 / 3)[5]!,
     inFight: false,
@@ -88,6 +93,17 @@ export function loadScene(dir: string, stage = 1, block = 0, holdFrames = 60) {
     enemies: 0,
     attackers: 0,
     active: 0,
+    pe,
+    say: (id) => player.say(id, 'civilian: '),
+    route: (n) => player.setRoute(n),
+    spawn: (rec, parent) => {
+      const obj = createObject(rec, world, parent);
+      if (obj) {
+        objects.push({ obj, type: rec.type });
+        boxes.add(obj, rec.type);
+      }
+      return obj;
+    },
   };
   const keys: string[] = [];
   const deck = new WordDeck(pe, (name) => {
@@ -98,6 +114,9 @@ export function loadScene(dir: string, stage = 1, block = 0, holdFrames = 60) {
   const boxes = new WordBoxes(pe, deck);
   const objects: { obj: GameObject; type: number }[] = [];
   let spawned = 0;
+  const fightCam = new FightCamera(pe);
+  let aims: AimEntry[] = [];
+  let over = false;
   player.start(block);
   return {
     pe,
@@ -118,7 +137,10 @@ export function loadScene(dir: string, stage = 1, block = 0, holdFrames = 60) {
       world.camTime = player.timer;
       const k = player.shot ? camSlot.ids.indexOf(player.shot.pathId) : -1;
       if (k >= 0) {
-        const c = cameraFromSample(cam.sample(k, player.shot!.t));
+        const mode = player.shot!.fight !== undefined && !player.fightDone ? (over ? 'return' : 'fight') : 'path';
+        const r = fightCam.step(cam.sample(k, player.shot!.t), mode, aims);
+        if (mode === 'return' && r.back) player.endFight();
+        const c = cameraFromSample(r.cam);
         world.eye = c.eye;
         world.view = cameraView(c);
         world.camYaw = c.yaw;
@@ -135,10 +157,13 @@ export function loadScene(dir: string, stage = 1, block = 0, holdFrames = 60) {
         }
       }
       world.active = 0;
+      world.aims = [];
       for (const o of objects) if (!o.obj.dead) o.obj.update(world);
       boxes.update(world);
-      // FUN_0040cda0: the fight is over once no enemy is left (not dying, nothing registered)
-      if (world.inFight && world.attackers === 0 && world.active === 0) player.endFight();
+      tickPlayers(world);
+      // FUN_0040cda0: the fight is over once no enemy is left; the camera turns back, then ends it (above)
+      aims = world.aims;
+      over = world.inFight && world.attackers === 0 && world.active === 0;
       world.frame++;
     },
   };

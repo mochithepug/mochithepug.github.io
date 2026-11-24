@@ -330,7 +330,6 @@ export class WordBoxes {
   }
 
   update(w: World) {
-    this.deck.tick(w.frame);
     // FUN_004b2a30: key ')' — Esc (scan code 1 → @008479f0) — with a target cancels it: the player's buffer is
     // emptied and the word starts again (FUN_00401310 / FUN_00401ce0; sound 0x3e16a9, FUN_00484d50 not ported).
     if (w.key === CANCEL_KEY) {

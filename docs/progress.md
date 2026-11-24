@@ -409,3 +409,73 @@ camera_release, attack_counts, stage_area_load, stop_voice_if_skipping). Survey 
 enemies are zombies (0x30), single-letter objects 0x10 / 0x11 (spawned by op 0x0C) and one 0x31; type 0x20 has no
 words. Zombie behaviour 14 (walk N frames, then approach) ported — checked in block 3. Next: the thrower (behaviour
 33 + projectiles), op 0x0C objects, placed props in PLAY.
+
+### 10b (part 5) — Civilians (2026-11-24)
+**Delivered:** op 0x0C spawns; type 0x10 civilians run their exe scripts (motions with loops, segments with
+their wait conditions, movement to points, "if hit" scripts) and spawn their attackers; zombie behaviour 35 (the
+scripted attack: step list with a kill frame). The library's first civilian runs, her zombie lunges and kills her
+on frame 64, she falls; then the zombie comes for the player. The second civilian walks while her zombie is alive
+and reaches her rescued segment when it is typed.
+**Verified:** test (kill after 40–90 frames; the second reaches "rescued"); traces of both scenes.
+**Not yet:** behaviour 34 (the second civilian's chasing zombie) and 40; her voice line and the first one's line;
+rescue reward (+400, count) and −100 penalties as hooks; the third civilian (a man) not checked.
+**Follow-up (user report: still after the kill / too far away):** segment condition 0x80 (camera at the path /
+time set by op 0xD) ported — after the fight, at path 55 time 60, the dying motion 416 plays while the stage script
+says "I don't wanna die." (dialogue 16). The snap far away was a PLAY loading race (motion not yet loaded at the
+kill → stale blend root); every mot/ file is now loaded before play. Checked against the user's original
+screenshot of the last-words shot. Still differs: at the kill the zombie is ~10 units from the man (original:
+grabbing him); no green blood pool.
+
+### 10b (part 6) — Fight camera aim (2026-11-24)
+**Delivered:** in fights the camera turns towards the enemies (the one attacking you first, else the nearest one or
+two taking part — civilians included), quickly for big angles and slowly near the end; when the fight is over it
+glides back to the path, and the fight ends once it is back (~1 s). Shared by PLAY and the test runner.
+**Verified:** tests (fight end now 1–120 frames after the last body; civilian scene run longer); PLAY screenshots
+of the first fight and of the first civilian (matches the user's original screenshot of him being caught).
+**Not yet:** the exact aim point on the body (object +0x100 not found — hips + 4 used); the mode-0x60 camera list.
+
+### 10b (part 7) — Second civilian's zombie (2026-11-24)
+**Delivered:** zombie behaviours 34 (chase the civilian, then the scripted grab) and 40 (walk to a point); the
+"zombie reached her" signal (segment bit 0x800). User report: her zombie never appeared (it stood still off-screen,
+behaviour 34 unported). Now it chases her through the arch and lunges.
+**Verified:** trace; PLAY screenshots; tests.
+**Follow-up (user: saved → "Please, help him!" and the man comes; not in time → she dies, no man):** ported the
+segment pass-over (FUN_00480860 / FUN_00480de0) — the segment that cleared her "if hit" script is skipped, so the
+grab kills her; civilian op 0x19 (route → block 9 when saved) and op 0x1D (her line). Verified: tests for both
+outcomes; PLAY screenshot of "Please, help him!" in block 9. The man in block 9 is not checked yet.
+
+### Dev tool — start PLAY part-way (2026-11-24)
+**Delivered (user request):** "from stage _ block _" fields next to ▶ PLAY, and `?play=game&stage=S&block=B` in the
+URL. The blocks on the way are not played: `EventPlayer.prime(block)` finds a route from block 0 through the block
+rules and applies only their lasting state (stage area, sky, light with fades finished, word set-up, approach
+bands) and the branch taken (e.g. block 9 = route 1, after the second civilian is saved). An unreachable block
+falls back to the start with a note.
+**Verified:** test (routes / choice / state); PLAY at block 1 (library) and block 9 (the well, the man).
+**Limits:** nothing alive carries over (e.g. the saved woman is not there at block 9's start); score, rescue count
+and life are fresh; only Stage 1 has been played.
+
+### 10d (part 1) — Lives and the word rank (2026-11-24)
+**Delivered (user: words harder than the original):** lives (3 by default) and hits from zombies — one life each,
+90 frames of grace, and the word rank −2 per hit (it was only ever going up); +2 instead of +1 every 30 s with 4+
+lives; the rank timer restarts when it drops. A debug line in PLAY: lives · rank · word level.
+**Verified:** tests (3 hits → 0 lives, ≥ 0x5A frames apart, grace, rank); PLAY screenshot after the first hit
+(lives 2, rank 0).
+**Not yet:** game over / continue at 0 lives (play goes on), score, the hit screen effect, the real HUD.
+
+**Fix (user: words jump between two-letter and too hard):** the word level is trunc((p + 5) × 0.1), not trunc(p) —
+the last step hidden in the decompiler's `__ftol()`, read from the machine code. Stage 1 words are now mostly
+level 1–3 (was 5–15); the first civilian's scene gets level 1, where the original's "Foul" comes from.
+
+### 10b (part 8) — The man at the well (2026-11-24)
+**Delivered:** zombie behaviour 39 (hidden until released), civilian op 0x1A (release them as a behaviour; 0x31
+removes them), behaviour 45 (pause; zombies stay over a body when their step list ends in −1). Block 9: the man's
+two zombies appear as he does and chase him; typed in time → rescued (route 1, flag 35); not typed → killed, his
+zombies stay over him until typed.
+**Verified:** tests for both outcomes; PLAY screenshots from block 9 (chase, and the zombies over his body).
+
+**Follow-up (user: killed man → his zombies don't attack; saved → stuck after his thanks):** behaviour 35's
+dead-victim branch was misread — the zombie switches to its next behaviour first, pauses briefly, then comes for the
+player; FUN_0044c080 ported in full (start states per behaviour). Event op 0x46 (wait for civilians in play, the
+count DAT_00a3e7a8 with segment flag 0x80000) ported — block 7 was releasing its fight before it started. The fight
+camera now counts as done outside fights. Verified: tests (both outcomes, the zombies reach behaviour 3); PLAY from
+block 9, saved: 9 → 7 → 8 → 4.
