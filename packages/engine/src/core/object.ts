@@ -109,6 +109,11 @@ export interface World {
   attackCounts?: number[];
   /** This frame's zombie queue (FUN_00420720): ranked nearest first at the start of the next frame (FUN_004207c0). */
   queue?: QueueEntry[];
+  /**
+   * FUN_00437100: the floor height under (x, y, z) — the collision meshes' hit (event op 0x10, not ported yet), else
+   * the default floor (event op 0x1A).
+   */
+  floorAt?(x: number, y: number, z: number): number;
   /** Add an object made by another object (a thrown item); it gets a word box if it is a word owner. */
   addObject?(obj: GameObject): void;
   /** Civilians still in play (DAT_00a3e7a8): +1 at set-up, −1 once at a 0x80000 segment or when removed. */

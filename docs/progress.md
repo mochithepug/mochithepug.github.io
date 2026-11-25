@@ -504,3 +504,15 @@ it breaks off, untyped it hits for 4 and sticks for a moment; after both, the th
 from block 3 (axe with its letter box, the thrower at the window).
 **Not yet:** behaviour 9 (the balcony thrower's death — it freezes when typed), behaviour 37 (block 6's item
 thrower), other item types.
+
+### Knocked off a ledge, default floors (2026-11-25)
+**Delivered:** zombie behaviour 9 (the balcony thrower typed: a small pop, falls to the floor, bounces, sinks — it
+used to freeze); event op 0x1A (default floor height); `World.floorAt` (the default floor; the collision meshes of
+op 0x10 are not ported yet). Behaviour 6's death start / motion / end shared with 9.
+**Verified:** test (pop < 6 up, lands on the default floor); trace.
+**+ Collision meshes:** event op 0x10 and the coli files (Dreamcast addresses decoded), the exe's segment test;
+`World.floorAt` now uses them (default floor as the exe's fallback). Test: block 1's floor found; block 3's window has
+no floor (only a wall). Zombies do not yet follow the floor while walking (FUN_00445a40).
+**+ Falling off the bridge (user screenshots, block 4):** behaviour 12 and death motion 0x432 for zombies flagged
+0x1000000; the motion swaps of FUN_00445320. A bridge thrower typed tips over the railing and falls into the canal.
+The test runner now primes like PLAY when it starts part-way. Test: motion 0x432, lands on the canal level.

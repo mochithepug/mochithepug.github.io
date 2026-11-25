@@ -5,7 +5,7 @@
  * and rank (core/player.ts), then FUN_0040cda0's fight-end rule. Drawing, the sky and the letterbox stay with the
  * caller.
  */
-import { cameraFromSample, cameraView, type CameraSample, type EventPlayer, type GameCamera, type PeImage, type SpawnRecord } from '@ttotd/formats';
+import { cameraFromSample, cameraView, segmentHit, type CameraSample, type CollisionFiles, type CollisionHit, type EventPlayer, type GameCamera, type PeImage, type SpawnRecord } from '@ttotd/formats';
 import { FightCamera, type AimEntry } from './fightcam.ts';
 import type { GameObject, World } from './object.ts';
 import { tickPlayers } from './player.ts';
@@ -29,6 +29,21 @@ export function rankQueue(w: World) {
   w.queue = [];
 }
 
+/**
+ * FUN_00437100: the floor under (x, y, z) — the segment (x, y − 1000, z) → (x, y, z) against the area's collision
+ * meshes (FUN_0040fad0; props with collision are not ported), nearest hit below; none, or material 5 / 0x37 → the
+ * default floor (event op 0x1A).
+ */
+export function floorAt(p: EventPlayer, coli: CollisionFiles | undefined, x: number, y: number, z: number): number {
+  let hit: CollisionHit | undefined;
+  for (const ptr of p.collision) {
+    const m = coli?.mesh(ptr);
+    if (m) hit = segmentHit(m, [x, y - 1000, z], [x, y, z], hit);
+  }
+  if (!hit || hit.material === 0 || hit.material === 5 || hit.material === 0x37) return p.defaultFloor;
+  return hit.point[1];
+}
+
 export class FrameStepper {
   /** Live objects in spawn order (finished ones are dropped at the end of each frame). */
   objects: FrameObject[] = [];
@@ -48,7 +63,11 @@ export class FrameStepper {
   /** The path camera at (path id, time), or undefined when the path is not in this stage's file. */
   private readonly sample: (pathId: number, t: number) => CameraSample | undefined;
 
-  constructor(player: EventPlayer, world: World, boxes: WordBoxes, sample: (pathId: number, t: number) => CameraSample | undefined, pe?: PeImage) {
+  /** The stage's collision files (coli0 + the stage's), for floors. */
+  private readonly coli?: CollisionFiles;
+
+  constructor(player: EventPlayer, world: World, boxes: WordBoxes, sample: (pathId: number, t: number) => CameraSample | undefined, pe?: PeImage, coli?: CollisionFiles) {
+    this.coli = coli;
     this.player = player;
     this.world = world;
     this.boxes = boxes;
@@ -86,6 +105,7 @@ export class FrameStepper {
     for (; this.spawned < p.spawns.length; this.spawned++) this.add(p.spawns[this.spawned]!);
     rankQueue(w);
     w.attackCounts = p.attackCounts;
+    w.floorAt ??= (x, y, z) => floorAt(this.player, this.coli, x, y, z);
     w.active = 0;
     w.aims = [];
     for (const o of this.objects) if (!o.obj.dead) o.obj.update(w);

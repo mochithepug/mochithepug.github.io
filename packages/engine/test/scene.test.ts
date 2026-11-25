@@ -448,6 +448,58 @@ describe.skipIf(!dir)('Stage 1 opening with the ported objects (real data)', () 
     expect(s.hits.filter((h) => h.damage === 4).length).toBe(0);
   });
 
+  it('the thrower typed on its ledge falls (behaviour 9): a small pop, gravity, lands on the default floor (op 0x1A), sinks', () => {
+    const s = loadScene(dir!, 1, 3, Infinity);
+    let busy = 0, th: Zombie | undefined, top = -Infinity, fromY = 0, landed: number | undefined;
+    for (let f = 0; f < 60 * 40 && landed === undefined; f++) {
+      s.step();
+      if (busy > 0) busy--;
+      th ??= s.objects.map((o) => o.obj).find((o): o is Zombie => o instanceof Zombie && o.behaviour === 33);
+      const thrown = th && (th as unknown as { rig: { modelOverride: Map<number, number> } }).rig.modelOverride.size > 0;
+      if (s.world.inFight && s.world.targets[0] === -1 && !busy) {
+        const b = s.boxes.boxes.find((x) => x.shown && x.typed === 0 && !(x.owner instanceof ThrownItem) && (x.owner !== th || thrown));
+        if (b) {
+          s.type(b.word!);
+          busy = b.word!.length + 2;
+        }
+      }
+      if (th?.behaviour === 9) {
+        if (top === -Infinity) fromY = th.place.pos[1];
+        top = Math.max(top, th.place.pos[1]);
+      }
+      if (th?.behaviour === 7 && top > -Infinity) landed = th.place.pos[1];
+    }
+    expect(top).toBeGreaterThan(fromY); // knocked up a little …
+    expect(top - fromY).toBeLessThan(6); // … not thrown into the air
+    expect(landed).toBeCloseTo(s.player.defaultFloor, 1); // no collision meshes yet: the default floor
+  });
+
+  it('a bridge thrower typed (block 4, flag 0x1000000): death motion 0x432 over the railing, then falls into the canal (behaviour 12)', () => {
+    const s = loadScene(dir!, 1, 4, Infinity);
+    let busy = 0, th: Zombie | undefined, motion = 0, fromY = 0, landed: number | undefined;
+    for (let f = 0; f < 60 * 60 && landed === undefined; f++) {
+      s.step();
+      if (busy > 0) busy--;
+      th ??= s.objects.map((o) => o.obj).find((o): o is Zombie => o instanceof Zombie && o.behaviour === 33);
+      const thrown = th && (th as unknown as { rig: { modelOverride: Map<number, number> } }).rig.modelOverride.size > 0;
+      if (s.world.inFight && s.world.targets[0] === -1 && !busy) {
+        const b = s.boxes.boxes.find((x) => x.shown && x.typed === 0 && !(x.owner instanceof ThrownItem) && (x.owner !== th || thrown));
+        if (b) {
+          s.type(b.word!);
+          busy = b.word!.length + 2;
+        }
+      }
+      if (th?.behaviour === 12 && !motion) {
+        motion = th.rig.motion;
+        fromY = th.place.pos[1];
+      }
+      if (motion && th?.behaviour === 7) landed = th.place.pos[1];
+    }
+    expect(motion).toBe(0x432);
+    expect(landed).toBeCloseTo(s.player.defaultFloor, 1); // the canal (block 3's default floor, carried on)
+    expect(fromY - landed!).toBeGreaterThan(10);
+  });
+
   it('word boxes: the first wave gets three category-1 words with different first letters, shown in the fight', () => {
     const s = loadScene(dir!, 1, 0, 60 * 20);
     for (let f = 0; f < 60 * 30; f++) s.step();

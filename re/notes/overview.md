@@ -1023,3 +1023,45 @@ Every spawn in st1evtbl.bin (ops 0x03 / 0x09 / 0x0A / 0x0B / 0x0C), by type — 
 - While flying it registers for the fight with aim y + 1.5 (the camera follows it).
 - Word boxes: FUN_004b2a30 shows a box when word flag 0x200 is set, whatever else (thrown items).
 - Rig: node models before the first pose come from the skeleton's node order (the thrower checks its hands at once).
+
+## Floors and behaviour 9 (ported 2026-11-25)
+
+- **Event op 0x1A** (`FUN_0044eeb0`): DAT_00a3b80c = the float it points at — the default floor height (Stage 1:
+  block 0 152.5 → 1.0, 1 6.5 → 1.9, 3 −8.4 → −9.8 → −15.5, 4 −15.5 …). **Op 0x10** (`FUN_0044ed30`): DAT_00a10c14 =
+  a list of collision-mesh pointers until −1; the task `FUN_00410720` copies it into DAT_00a395a0 (count area +0x60;
+  a second list DAT_00a11a70 → DAT_00a3e780, +0x61).
+- **Floor `FUN_00437100(x, y, z)`** = `FUN_0040fad0` on the segment (x, y − 1000, z) → (x, y, z): props flagged
+  0x10 | 0x40 (FUN_0040fc70) and the area's meshes (ray vs mesh `FUN_004c3620`), nearest hit → DAT_00a3f338 (height),
+  DAT_00a3f320 (material; 5 / 0x37 use the default); no hit → DAT_00a3b80c. Port: `World.floorAt` = the default floor
+  (meshes not ported).
+- **Behaviour 9 `FUN_00444130`** (from the death choice: behaviour 0x34, +0x1370 0x100000, kinds 5–6): flags | 0x20000,
+  death start (FUN_004456a0); target in view space from the aim point: kind 4 (±tilt, z +1.5 if view z ≤ −25 else
+  −5), 5 (z −7), 6 (y −7, z −7), others (z the same, everything ÷ 4); x ± 0.5, y − ((rand % 5 + 1)·0.5 + 3);
+  `FUN_0043c950` frames = max(trunc(horizontal distance × m / 30), m), m = 10 (+0x1370 0x2000000 and not 0x44000000)
+  else 15; `FUN_0043cbe0` each frame: v = (Δx / n, (c + 1)·−0.027222 + (n²·0.027222 + 2Δy) / 2n, Δz / n); then
+  gravity −0.03675 (kinds 4–5: −0.027222) to the floor, bounce ×−0.25 while |v| > 0.15 (< 120 frames), then the death
+  end (FUN_00445840) and sinking. The aim point is taken as the feet + 4 here (from the hips the pop would be ~13 up).
+- **Collision meshes (ported 2026-11-25).** `load_coli(0)` and `load_coli(stage + 1)` (names @004f3ba4: coli0.bin,
+  coli1.bin …) read into the DC-address buffer: the buffer offset counts 4-byte elements — index 0 at PC 0x9FE400 =
+  DC 0x0CECD800, others at PC 0x9FFC00 = DC 0x0CECF000 (`evt_rebase_pointers`: DC 0x0CE80000–0x0CEFFFFF − 0x0C4CF400).
+  Op 0x10's pointers are offsets into coli1.bin (Stage 1: 0x0, 0x140, 0x300, 0x700, 0x918, 0xDB0, 0x1368). Mesh: i32
+  groups; group: i32 faces, f32 max xyz, min xyz; face 18 words: plane abcd, axis (0 y–z, 1 x–z, 2 x–y), 4 corners,
+  material. `FUN_004c3620`: box overlap, back→front crossing (two-sided only with DAT_00a3f33c), inside by the edges'
+  cross products × the plane component ≥ 0, nearest to the segment's end. Stage 1 block 3's mesh (0x1368) is only the
+  two-sided wall across the thrower's window — there is no floor under it (so behaviour 9 drops it behind the wall).
+- Objects with collision (`FUN_0040fc70`, flags 0x10 | 0x40, index +0x14C, the object's matrix) — not ported; no such
+  object near the block 3 window.
+- **Correction (user screenshots of block 4):** `FUN_00445a40` (@005a2234) is not floor following — it is the water
+  splash (floor material 0x37 / 5 above the body → FUN_00413410, +0x136c | 2). Zombies do not follow the floor every
+  frame; falls are per behaviour.
+- **Behaviour 6 `FUN_00443d70`** in full: death motion (`FUN_00445170`), flags, FUN_00445700 (a voice counter),
+  death start; each frame the effects hook @005a2238 (`FUN_00445ad0`: dust / blood at the frames listed per death
+  motion, `FUN_004454f0` → +0x13a4); at the motion's end — or at once with flag **0x1000000** — +0x1370 −0x200, and
+  0x1000000 → **behaviour 12**, else the death end. `FUN_00445170` for kinds other than 4–6: flag 0x1000000 → motion
+  **0x432**; else (no +0x136c 8/0x10/0x40/0x80) FUN_00445320 by direction (+ FUN_004454f0). The remaps after it:
+  +0x1370 bit 4 (side falls → back list), bit 1 (0x412/0x413/0x417 → 0x414/0x415/0x416), bit 2 (the reverse);
+  measured: 0x412 / 0x413 / 0x417 fall forward (local z −9), 0x414–0x416 backward (+2.5 … +8).
+- **Behaviour 12 `FUN_00445f20`**: +0x1370 −0x20000000, flags −0x4000, gravity −0.03675; waits for frame 60 of the
+  motion (it has tipped over), then +0x1370 −0x10000 | 0x20000000; falls; on reaching the floor: y = floor, v ×−0.25,
+  (not in water) landing effect @005a223c and motion 0x431 (blend 10, rand % 10); |v| ≤ 0.15 → the death end.
+  Stage 1 block 4's bridge throwers (param 0x1020000): fall into the canal (default floor −15.5, carried from block 3).

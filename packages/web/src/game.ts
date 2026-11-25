@@ -6,6 +6,8 @@
  */
 import {
   CameraFile,
+  CollisionFiles,
+  coliFileName,
   cameraFromSample,
   cameraProjection,
   cameraView,
@@ -250,10 +252,14 @@ export async function startGame(fs: GameFS, stage = 1, at = 0, block = 0) {
   }
   player.start(block);
   const boxes = new WordBoxes(a.pe, deck);
+  // load_coli(0) + load_coli(stage): the collision meshes event op 0x10 points into
+  const coliFile = async (n: string) => (fs.has(`coli/${n}`) ? await a.file(`coli/${n}`) : undefined);
+  const coli = new CollisionFiles(await coliFile(coliFileName(a.pe, 0)), await coliFile(coliFileName(a.pe, stage)));
+  if (my !== token) return;
   const stepper = new FrameStepper(player, world, boxes, (id, t) => {
     const k = slot.ids.indexOf(id);
     return k < 0 ? undefined : camFile.sample(k, t);
-  }, a.pe);
+  }, a.pe, coli);
   game = {
     stage, areas, sky: new Sky(readSkyTable(a.pe)), camFile, camIds: slot.ids, player, world, stepper, boxes,
     get objects() {

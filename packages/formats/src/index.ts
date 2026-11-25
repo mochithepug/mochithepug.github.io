@@ -20,3 +20,4 @@ export * from './skin.ts';
 export * from './stagedraw.ts';
 export * from './enemy.ts';
 export * from './civilian.ts';
+export * from './coli.ts';

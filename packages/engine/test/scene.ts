@@ -3,6 +3,8 @@ import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import {
   CameraFile,
+  CollisionFiles,
+  coliFileName,
   cameraFromSample,
   cameraProjection,
   cameraView,
@@ -107,7 +109,12 @@ export function loadScene(dir: string, stage = 1, block = 0, holdFrames = 60) {
   const stepper = new FrameStepper(player, world, boxes, (id, t) => {
     const k = camSlot.ids.indexOf(id);
     return k < 0 ? undefined : cam.sample(k, t);
-  }, pe);
+  }, pe, (() => {
+    const read = (n: string) => (existsSync(join(dir, 'coli', n)) ? new Uint8Array(readFileSync(join(dir, 'coli', n))) : undefined);
+    return new CollisionFiles(read(coliFileName(pe, 0)), read(coliFileName(pe, stage)));
+  })());
+  // as PLAY does when starting part-way: the lasting state of the blocks on the way (EventPlayer.prime)
+  if (block > 0) player.prime(block);
   player.start(block);
   return {
     pe,

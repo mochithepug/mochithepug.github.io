@@ -16,7 +16,10 @@ Status: **G** = changes gameplay (a scene plays wrongly or cannot finish), **P**
 | Item | Where | Status | Notes |
 |---|---|---|---|
 | ~~Zombie behaviour 33 — thrower + thrown axes~~ | blocks 3, 4, 8 | done 2026-11-25 | the axe-type flight; other item types (state 2 `FUN_00448fa0`) and skeleton 0x14's items not ported |
-| Zombie behaviour 9 — death of a zombie flagged 0x100000 / kinds 5–6 (the balcony thrower falls?) | block 3 | G | freezes when typed |
+| ~~Zombie behaviour 9 — knocked off (ledge throwers, kinds 4–6)~~ | block 3 | done 2026-11-25 | lands on the default floor until the collision meshes are ported |
+| ~~Stage collision meshes (op 0x10, coli files, FUN_004c3620)~~ | all | done 2026-11-25 | floor lookup uses them; props with collision (FUN_0040fc70) not ported |
+| ~~Behaviour 12 — falling off a ledge after death (flag 0x1000000, motion 0x432)~~ | block 4 | done 2026-11-25 | landing effects not ported |
+| Death effects at set frames (@005a2238 `FUN_00445ad0`: blood / dust; `FUN_00445a40`: water splash) | all | P | |
 | Zombie behaviours 37 → 38 (`FUN_0044aaf0`, `FUN_0044af70`) | block 6 (civilian attacker) | G | holds and throws an item object (task `FUN_0042fcd0`, functions @005a1ce0) at the civilian or a player |
 | ~~Zombie behaviour 39 (`FUN_0044b280`)~~ | blocks 6, 9 | done 2026-11-24 | hidden until the civilian's op 0x1A releases it |
 | ~~Zombie behaviour 0x2D (`FUN_0044bf80`)~~ | after 34 / 35 | done 2026-11-24 | short pause after the victim dies, then the next behaviour |
@@ -30,8 +33,8 @@ Status: **G** = changes gameplay (a scene plays wrongly or cannot finish), **P**
 |---|---|---|---|
 | ~~0x0F attack_counts~~ | 7 (0,1,2,4,10) | done 2026-11-24 | zombies allowed per distance band (queue + behaviour 5) |
 | 0x0D spawn variant | 1 (block 1) | ? | spawns a type 0x25 object (scenery) |
-| 0x10 | 15 (1,2,3,4,6,8,9,14) | ? | pointer to a run-time address |
-| 0x1A | 14 | ? | pointer to a small parameter block (1.0, 152.0, 0x26 …) |
+| ~~0x10~~ | 15 | done | the area's collision meshes (DC pointers into coli1.bin) |
+| ~~0x1A~~ | 14 | done | default floor height (the float it points at, DAT_00a3b80c) |
 | 0x14, 0x15 | 1 each (block 0) | ? | |
 | 0x19, 0x24, 0x27 | 4 / 3 / 3 (1, 14) | P | second light set (@00a14140) |
 | 0x1D, 0x1E, 0x1F | 6 / 5 / 22 | P ? | display globals (DAT_00a3b804, a3b438, a3e7b4) |

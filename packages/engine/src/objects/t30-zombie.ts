@@ -203,41 +203,205 @@ export class Zombie implements GameObject, WordOwner {
     return Math.abs(d) <= range;
   }
 
+  /**
+   * FUN_00445170 (kinds other than 4–6; the 0x136c special cases are not ported): flag 0x1000000 — a zombie on a
+   * ledge — falls over it with motion 0x432 (then behaviour 12), else FUN_00445320 by direction.
+   */
+  private pickDeathMotion(w: World) {
+    if (this.flags & 0x1000000 && (this.kind < 4 || this.kind > 6)) {
+      this.rig.blendTo(0x432, 0, 1);
+      this.flags &= ~0x4000;
+      return;
+    }
+    this.pickDeathByDirection(w);
+  }
+
+  /** FUN_00445320: the death motion by the angle between the player's view and the zombie's facing. */
+  private pickDeathByDirection(w: World) {
+    const u = (w.camYaw - this.place.angles[1]) & 0xffff;
+    let m: number | undefined;
+    if (Zombie.within(u, 0x4000, 0x2000)) m = 0x419;
+    if (Zombie.within(u, 0xc000, 0x2000)) m = 0x418;
+    if (Zombie.within(u, 0, 0x2000)) m = [0x412, 0x413, 0x415, 0x417][w.rand() & 3];
+    if (Zombie.within(u, 0x8000, 0x2000)) m = [0x412, 0x416, 0x414, 0x415, 0x416, 0x417][w.rand() % 6];
+    // +0x1370 bits swap the motion (the exe changes the playing motion id after starting it): 4 — a side fall becomes
+    // one of the back-fall list; 1 — 0x412/0x413/0x417 → 0x414/0x415/0x416 (the thrower sets it: it falls forward out
+    // of its window); 2 — the reverse
+    if (this.flags2 & 4 && (m === 0x418 || m === 0x419)) m = [0x412, 0x416, 0x414, 0x415, 0x416, 0x417][w.rand() % 6];
+    if (this.flags2 & 1) m = m === 0x412 ? 0x414 : m === 0x413 ? 0x415 : m === 0x417 ? 0x416 : m;
+    if (this.flags2 & 2) m = m === 0x414 ? 0x412 : m === 0x415 ? 0x413 : m === 0x416 ? 0x417 : m;
+    if (m !== undefined) this.rig.blendTo(m, 0, 5);
+    this.flags &= ~0x4000;
+  }
+
+  /**
+   * FUN_004456a0 (death start): attack slot freed; leaves the active table (flag 0x10000) unless it is the last enemy
+   * and flagged 0x800000 (then the fight waits for its body); DAT_00a3ba4a − 1 (FUN_00445660).
+   */
+  private deathStart(w: World) {
+    this.flags = (this.flags | 0x22000) >>> 0;
+    this.flags2 = ((this.flags2 & ~0x200) | 0x60000000) >>> 0;
+    this.releaseAttack(w);
+    if (!(this.flags & 0x800000) || w.attackers !== 1) this.flags = (this.flags | 0x10000) >>> 0;
+    w.attackers--;
+    this.flags2 &= ~0x10000;
+  }
+
+  /** FUN_00445840 (death end): the live-enemy count drops; on to sinking (7). */
+  private deathEnd(w: World) {
+    this.flags2 &= ~0x60000000;
+    this.flags = ((this.flags & ~0x20001) | 0xc000) >>> 0;
+    w.enemies--; // FUN_00445680
+    this.rig.counter--;
+    this.behaviour = 7;
+    this.state = 0;
+  }
+
   /** Behaviour 6 (FUN_00443d70): death motion, then behaviour 7. */
   private die(w: World) {
     const r = this.rig;
     if (this.state === 0) {
-      // FUN_00445320: by the angle between the player's view and the zombie's facing
-      const u = (w.camYaw - this.place.angles[1]) & 0xffff;
-      let m: number | undefined;
-      if (Zombie.within(u, 0x4000, 0x2000)) m = 0x419;
-      if (Zombie.within(u, 0xc000, 0x2000)) m = 0x418;
-      if (Zombie.within(u, 0, 0x2000)) m = [0x412, 0x413, 0x415, 0x417][w.rand() & 3];
-      if (Zombie.within(u, 0x8000, 0x2000)) m = [0x412, 0x416, 0x414, 0x415, 0x416, 0x417][w.rand() % 6];
-      if (m !== undefined) r.blendTo(m, 0, 5);
-      this.flags &= ~0x4000;
+      this.pickDeathMotion(w);
       this.state = 1;
     }
     if (this.state === 1) {
-      this.flags = (this.flags | 0x22000) >>> 0;
-      this.flags2 = ((this.flags2 & ~0x200) | 0x60000000) >>> 0;
-      // FUN_004456a0: attack slot freed; leaves the active table (flag 0x10000) unless it is the last enemy and
-      // flagged 0x800000 (then the fight waits for its body); DAT_00a3ba4a − 1 (FUN_00445660)
-      this.releaseAttack(w);
-      if (!(this.flags & 0x800000) || w.attackers !== 1) this.flags = (this.flags | 0x10000) >>> 0;
-      w.attackers--;
+      this.deathStart(w);
       this.state = 2;
-      this.flags2 &= ~0x10000;
     }
     if (r.frame >= w.motions.frames(r.motion) - 1 || this.flags & 0x1000000) {
-      // FUN_00445840
-      this.flags2 &= ~0x60000000;
-      this.flags = ((this.flags & ~0x20001) | 0xc000) >>> 0;
-      w.enemies--; // FUN_00445680
-      r.counter--;
-      this.behaviour = 7;
-      this.state = 0;
+      this.flags2 &= ~0x200;
+      if (this.flags & 0x1000000) {
+        this.behaviour = 12; // over the ledge
+        this.state = 0;
+        return;
+      }
+      this.deathEnd(w);
     }
+  }
+
+  /**
+   * Behaviour 12 (FUN_00445f20): falling off a ledge after death (flag 0x1000000, motion 0x432). The motion tips it
+   * over until frame 60; then gravity −0.03675 a frame to the floor (FUN_00437100); on landing (not in water) the
+   * lying motion 0x431, bounce ×−0.25; once slower than 0.15 the death ends (sinking). (Landing effects — dust,
+   * splash, blood — not ported.)
+   */
+  private fallOffLedge(w: World) {
+    const r = this.rig;
+    if (this.state === 0) {
+      this.flags2 = (this.flags2 & ~0x20000000) >>> 0;
+      this.flags &= ~0x4000;
+      this.fallGravity = f32(-0.0367500);
+      this.state = 1;
+    }
+    if (this.state === 1) {
+      if (r.frame < 0x3c) return;
+      this.state = 2;
+      this.flags2 = ((this.flags2 & ~0x10000) | 0x20000000) >>> 0;
+    }
+    if (r.frame >= w.motions.frames(r.motion) - 1 && r.motion === 0x432) this.flags = (this.flags | 0x4000) >>> 0;
+    this.vel[1] = f32(this.vel[1] + this.fallGravity);
+    const p = this.place.pos;
+    const floor = w.floorAt?.(p[0], p[1], p[2]) ?? -Infinity;
+    if (p[1] + this.vel[1] > floor) return;
+    p[1] = floor;
+    this.vel[1] = f32(this.vel[1] * -0.25);
+    if (!(this.flags2 & 0x10000)) {
+      r.blendTo(0x431, w.rand() % 10, 10);
+      this.flags &= ~0x4000;
+    }
+    if (Math.abs(this.vel[1]) <= 0.15) {
+      this.vel = [0, 0, 0];
+      this.acc = [0, 0, 0];
+      this.deathEnd(w);
+    }
+  }
+
+  /** Behaviour 9: fling frames (+0x1338), counter (+0x1334), from / to (+0x13c4 / +0x13d0), gravity (+0x5c). */
+  private flingFrames = 0;
+  private flingCount = 0;
+  private flingFrom: Vec3 = [0, 0, 0];
+  private flingTo: Vec3 = [0, 0, 0];
+  private fallGravity = 0;
+
+  /**
+   * Behaviour 9 (FUN_00444130): knocked off — kinds 4–6, flag +0x1370 0x100000 (throwers on a ledge), behaviour 0x34.
+   * A target near its view-space aim point (kind 4: z +1.5 / −5 by distance, ±tilt; 5: z −7; 6: z −7, y −7; others:
+   * all ÷ 4), a parabola to it over max(horizontal distance × m / 30, m) frames (FUN_0043c950 / FUN_0043cbe0; m 10 or
+   * 15), the death motion; then gravity (−0.0368, kinds 4–5 −0.0272) until the floor (FUN_00437100), bouncing at
+   * −0.25 while faster than 0.15 (for up to 120 frames), then the usual death end and sinking.
+   */
+  private knockedOff(w: World) {
+    const r = this.rig;
+    if (this.state === 0) {
+      this.flags = (this.flags | 0x20000) >>> 0;
+      this.deathStart(w);
+      let div = 1, yOff = 0, zOff: number;
+      // +0x70: the view-space aim point (+0x100, y + 4). Taken here as the feet + 4 — from the hips the target would be
+      // ~13 units up; the camera aim uses the hips (where the exe sets +0x100 is still not found)
+      const pp = this.place.pos;
+      const view = transformPoint(w.view, [pp[0], pp[1] + 4, pp[2]]);
+      const far = view[2]! <= -25;
+      if (this.kind === 4) {
+        const sign = 1 - 2 * (w.rand() & 1);
+        this.place.angles[0] = (this.place.angles[0] + sign * (w.rand() % 5) * 0x100) & 0xffff;
+        zOff = far ? 1.5 : -5;
+      } else if (this.kind === 5) zOff = -7;
+      else if (this.kind === 6) {
+        yOff = 7;
+        this.flags2 = (this.flags2 & ~0x20000000) >>> 0;
+        zOff = -7;
+      } else {
+        div = 4;
+        zOff = far ? 1.5 : -5;
+      }
+      const sign = 1 - 2 * (w.rand() & 1);
+      const t = transformPoint(invert(w.view), [
+        f32((sign * 0.5) / div + view[0]!),
+        f32(view[1]! - (((w.rand() % 5) + 1) * 0.5 + yOff + 3) / div),
+        f32(zOff / div + view[2]!),
+      ]);
+      this.flingFrom = [...this.place.pos];
+      this.flingTo = [t[0]!, t[1]!, t[2]!];
+      this.flingCount = 0;
+      const m = this.flags2 & 0x2000000 && !(this.flags & 0x44000000) ? 10 : 15;
+      const d = Math.hypot(this.flingFrom[0] - this.flingTo[0], this.flingFrom[2] - this.flingTo[2]);
+      this.flingFrames = Math.max(Math.trunc(d / f32(30 / m)), m);
+      this.pickDeathMotion(w); // FUN_00445170 → FUN_00445320 for these
+      this.vel = [0, 0, 0]; // FUN_0043cf20
+      this.acc = [0, 0, 0];
+      this.state = 1;
+      this.flags2 &= ~0x10000;
+    }
+    if (r.frame >= w.motions.frames(r.motion) - 1) this.flags = (this.flags | 0x4000) >>> 0;
+    if (this.state === 1) {
+      // FUN_0043cbe0: the velocity for this frame of the parabola
+      const c = this.flingCount++, n = this.flingFrames, G = f32(0.027222222);
+      if (c < n) {
+        const dy = this.flingTo[1] - this.flingFrom[1];
+        this.vel = [
+          f32((this.flingTo[0] - this.flingFrom[0]) / n),
+          f32((c + 1) * -G + (n * n * G + dy + dy) / (n * 2)),
+          f32((this.flingTo[2] - this.flingFrom[2]) / n),
+        ];
+        return;
+      }
+      this.fallGravity = this.kind === 4 || this.kind === 5 ? -G : f32(-0.0367500);
+      this.state = 2;
+      this.flingCount = 0;
+    }
+    // falling (state 2)
+    this.flingCount++;
+    this.vel[1] = f32(this.vel[1] + this.fallGravity);
+    const p = this.place.pos;
+    const floor = w.floorAt?.(p[0], p[1], p[2]) ?? -Infinity;
+    if (floor < p[1] + this.vel[1]) return;
+    p[1] = floor;
+    if (this.flingCount < 0x78 && Math.abs(this.vel[1]) > 0.15) {
+      this.vel[1] = f32(this.vel[1] * -0.25); // bounce
+      return;
+    }
+    this.vel = [0, 0, 0];
+    this.deathEnd(w);
   }
 
   /** Behaviour 7 (FUN_00443f70): sink 0.04 a frame for 120 frames, then end. */
@@ -288,6 +452,8 @@ export class Zombie implements GameObject, WordOwner {
     else if (this.behaviour === 15) this.walkDistanceThenApproach(w);
     else if (this.behaviour === 14) this.walkFrames(w);
     else if (this.behaviour === 6) this.die(w);
+    else if (this.behaviour === 9) this.knockedOff(w);
+    else if (this.behaviour === 12) this.fallOffLedge(w);
     else if (this.behaviour === 7) this.sink();
     else if (this.behaviour === 39) this.waitRelease(w);
     else if (this.behaviour === 5) this.waitTurn(w);

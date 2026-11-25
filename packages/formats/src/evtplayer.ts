@@ -105,6 +105,10 @@ export class EventPlayer {
   words = { group: 0, budget: 25, count: 0 };
   /** Event op 0x0F (FUN_00420340): zombies allowed per distance band, DAT_00a3b7f0.. (defaults 2 3 4, FUN_00420480). */
   attackCounts = [2, 3, 4];
+  /** Event op 0x1A (FUN_0044eeb0): the default floor height DAT_00a3b80c (the float the command points at). */
+  defaultFloor = 0;
+  /** Event op 0x10 (FUN_0044ed30 → FUN_00410720): the area's collision meshes (DC pointers into the coli files). */
+  collision: number[] = [];
   /** Stage area to draw (DAT_00a11124, op 0x29). */
   area = 0;
   /** Sky row (DAT_00a118d4, op 0x1b) and mode (DAT_00a3e764, op 0x1c: 0 off, 1 turning, 2 still). */
@@ -215,6 +219,8 @@ export class EventPlayer {
           else if (c.op === 0x29) this.area = (w(1) << 16) >> 16;
           else if (c.op === 0x1b) this.skyRow = w(1);
           else if (c.op === 0x1c) this.skyMode = w(1);
+          else if (c.op === 0x10) this.collision = c.words.slice(1).filter((x) => x !== -1).map((x) => x >>> 0);
+          else if (c.op === 0x1a) this.defaultFloor = this.f32At(w(1) >>> 0) ?? this.defaultFloor;
         }
       }
     for (let k = 0; k < 100000 && this.fades.size; k++) this.stepFades();
@@ -464,6 +470,19 @@ export class EventPlayer {
           const fl = (k: number) => new Float32Array(new Uint32Array([w(k)]).buffer)[0]!;
           this.bands[w(1)] = [fl(2), fl(3), fl(4)];
           this.add('other', `approach band ${w(1)} = ${this.bands[w(1)]!.map((v) => v.toFixed(1)).join(' / ')}`);
+          advance();
+          break;
+        }
+        case 0x10: {
+          this.collision = [];
+          for (let k = 1; k < len / 4 && w(k) !== -1; k++) this.collision.push(w(k) >>> 0);
+          this.add('other', `collision meshes ${this.collision.map((p) => '0x' + p.toString(16)).join(' ') || '(none)'}`);
+          advance();
+          break;
+        }
+        case 0x1a: {
+          this.defaultFloor = this.f32At(w(1) >>> 0) ?? this.defaultFloor;
+          this.add('other', `default floor ${this.defaultFloor.toFixed(1)}`);
           advance();
           break;
         }
