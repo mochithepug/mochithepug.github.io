@@ -19,6 +19,9 @@ import {
   identity,
   Motion,
   motionFits,
+  PropMotion,
+  propMotionFits,
+  readPropTypes,
   modelRef,
   mul,
   pathLength,
@@ -122,6 +125,8 @@ function motionLibrary(a: Assets): MotionLib & { preload(): Promise<void> } {
   const infos = new Map(readMotionTable(a.pe).map((m) => [m.id, m]));
   const cache = new Map<string, Motion | null>();
   const files = new Map<string, Uint8Array>();
+  const props = new Map<string, PropMotion | null>();
+  const propTypes = readPropTypes(a.pe);
   return {
     async preload() {
       const names = [...new Set([...infos.values()].map((m) => m.file))].filter((f) => !files.has(f) && a.fs.has(`mot/${f}`));
@@ -146,6 +151,20 @@ function motionLibrary(a: Assets): MotionLib & { preload(): Promise<void> } {
         void load.finally(() => pendingLoads.delete(load));
       }
       return undefined;
+    },
+    prop(id, type) {
+      const key = `p${id}/${type}`;
+      if (props.has(key)) return props.get(key) ?? undefined;
+      const info = infos.get(id), t = propTypes[type], file = info && files.get(info.file);
+      if (!info || !t || !file) return undefined; // not preloaded: try again later
+      let m: PropMotion | null = null;
+      try {
+        if (propMotionFits(file, info, t.n)) m = new PropMotion(file, info, t);
+      } catch {
+        /* no block */
+      }
+      props.set(key, m);
+      return m ?? undefined;
     },
   };
 }
