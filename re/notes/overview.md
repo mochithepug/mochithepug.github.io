@@ -1000,3 +1000,26 @@ Every spawn in st1evtbl.bin (ops 0x03 / 0x09 / 0x0A / 0x0B / 0x0C), by type — 
 - Also: zombies start +0x1370 = (short) record word 8 (+0x20, obj +0x131a) | 0x60000000 (FUN_00441d80); Stage 1's
   words are all 0. Behaviour 2's cool-down +0x1340 comes only from behaviour 19 (FUN_004467c0); +0x1370 bit 0x400
   (one idle cycle before asking) only for skeleton 2 (FUN_00441f90).
+
+## Thrower (behaviour 33) and thrown items (ported 2026-11-25)
+
+- Items in hand are joint models: joint 5 (+0x4e0 = +0x210 + 5·0x90) and joint 8 (+0x690). Skeleton 0x13 (znonoo):
+  item ranges 0x221F–0x2223 / 0x2217–0x221B, empty hands 0x221C / 0x2214, item model = hand model − 0x1FAE / −0x1FA6
+  (both axes → 0x271). Skeleton 1: −0x20 / −0x1D, empty 0x1EF9 / 0x1EF3. Skeleton 0x14: special (not ported).
+- **Behaviour 33 `FUN_00448310`** (kind 7): state 0 — items in hand: 2 → wait record +4, 1 → +8, 0 → leave
+  (FUN_004444e0); idle (motion set entry 0); then **FUN_004b1410(0)** (attack timer cleared) and the attack-slot request;
+  hand by `FUN_00448110` (both full: rand bit — even: 5, odd: 8; row 0 for hand 5, else 1); throw motion = attack row
+  (blend 4); at the row's frame `FUN_00449980` launches; motion end → items left: again; none: idle record +0xC, then
+  record next 0 → flag 0x20000000, walk distance = record +0x10 (raw float) → behaviour 15 (backwards), whose end with
+  0x20000000 is **FUN_004444e0: leave the fight**. Stage 1 throwers: waits 20 / 60 / 90, +0xC 60, distance 5 / 25.
+- **Launch `FUN_00449980`**: a new object (task `FUN_00449d20`, word flags 0x38000A12: one letter, always shown),
+  position = the hand joint, flags 0x80000001, +0x121 = the thrower's (it keeps the attack slot), type by model
+  (0x271–0x278 → 1, spin 0xB00; else 2, spin 0x1600), speed @005ea6e8[rank] (0.15 … 0.50) × 1.5 for kind 7, target
+  `FUN_004497a0` = view-space (0, −1.5, −4) for axes (0, 0, −4 others; two players: x ± @004de330), yaw to it, z 0x800.
+- **Flight `FUN_00448cc0`**: frames = distance / speed; spin; on arrival FUN_004846d0(p, 1, 4); stuck in front of the
+  camera 30 frames (box off: flags 0x4008000, word flags −0x200 +0x400), blinking 60, then the slot is freed and it
+  ends. **Typed `FUN_004493f0`** (word complete → flag 8 → state table entry 3): slot freed, flies off at 1.5 a frame to
+  a random view-space offset ±(10…100) until there or 180 frames.
+- While flying it registers for the fight with aim y + 1.5 (the camera follows it).
+- Word boxes: FUN_004b2a30 shows a box when word flag 0x200 is set, whatever else (thrown items).
+- Rig: node models before the first pose come from the skeleton's node order (the thrower checks its hands at once).

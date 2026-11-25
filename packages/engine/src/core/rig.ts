@@ -293,9 +293,24 @@ export class CharacterRig {
     return out;
   }
 
-  /** Model of a joint's node, with any override. */
+  /** Nodes in joint order (root, then depth first — as `pose` lists them), for use before the first pose. */
+  private nodeOrder?: CharNode[];
+
+  /** Model of a joint's node, with any override (also before the first pose). */
   model(j: number): number {
-    return this.modelOverride.get(j) ?? this.joints[j]?.node.model ?? 0;
+    const o = this.modelOverride.get(j);
+    if (o !== undefined) return o;
+    if (this.joints[j]) return this.joints[j]!.node.model;
+    if (!this.nodeOrder) {
+      const out: CharNode[] = [this.type.root];
+      const walk = (n: CharNode) => {
+        out.push(n);
+        n.children.forEach(walk);
+      };
+      this.type.root.children.forEach(walk);
+      this.nodeOrder = out;
+    }
+    return this.nodeOrder[j]?.model ?? 0;
   }
 
   /** Default per-node draw (FUN_00474fb0): each non-root node's model at its matrix, then the skins. */

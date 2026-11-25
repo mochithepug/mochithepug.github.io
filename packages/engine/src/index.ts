@@ -9,6 +9,7 @@ export * from './objects/t10-civilian.ts';
 export * from './objects/t22-daemon.ts';
 export * from './objects/t26-opencar.ts';
 export * from './objects/t30-zombie.ts';
+export * from './objects/thrown-item.ts';
 export * from './objects/t60-titlecard.ts';
 export * from './registry.ts';
 export * from './objects/sky.ts';

@@ -93,7 +93,8 @@ export class WordBox {
       return;
     }
     const f = o.wordFlags;
-    const may = !(f & 0x400000) && !(f & 0x8000) && w.inFight && o.hp !== 0 && !(o.flags & 0x8100) && !(f & 0x400) && (o.flags & 1) !== 0;
+    // FUN_004b2a30: the usual conditions, or word flag 0x200 (always — thrown items)
+    const may = (!(f & 0x400000) && !(f & 0x8000) && w.inFight && o.hp !== 0 && !(o.flags & 0x8100) && !(f & 0x400) && (o.flags & 1) !== 0) || (f & 0x200) !== 0;
     if (!may || !o.anchor) return;
     const a = o.anchor;
     if (this.word === undefined) {
@@ -320,7 +321,13 @@ export class WordBoxes {
 
   /** spawn_record: a box for `obj` if its type has word flags (@005a2848; typing mode assumed). */
   add(obj: unknown, type: number) {
-    if (!readWordFlags(this.pe, type) || !isWordOwner(obj)) return;
+    if (!readWordFlags(this.pe, type)) return;
+    this.attach(obj);
+  }
+
+  /** A box for an owner that brings its own word flags (FUN_004bec00(FUN_004b2a30) — e.g. a thrown item). */
+  attach(obj: unknown) {
+    if (!isWordOwner(obj)) return;
     const used = new Set(this.boxes.map((b) => b.slot));
     let slot = 0;
     while (used.has(slot) && slot < 13) slot++;

@@ -1,6 +1,6 @@
 /** Ported objects in Stage 1 against the user's install (skipped unless TTOTD_DIR is set). */
 import { describe, expect, it } from 'vitest';
-import { blendAngles, Civilian, hurtPlayer, Daemon, heading, OpeningCar, OPENING_CAR_MODELS, TitleCard, turnTowards, Zombie } from '../src/index.ts';
+import { blendAngles, Civilian, hurtPlayer, ThrownItem, Daemon, heading, OpeningCar, OPENING_CAR_MODELS, TitleCard, turnTowards, Zombie } from '../src/index.ts';
 import { loadScene } from './scene.ts';
 
 const dir = process.env.TTOTD_DIR;
@@ -400,6 +400,52 @@ describe.skipIf(!dir)('Stage 1 opening with the ported objects (real data)', () 
     expect(log.some((l) => l.startsWith('rescued'))).toBe(true);
     expect(log).not.toContain('killed');
     expect(s.player.log.some((e) => /^block 9 done/.test(e.text))).toBe(true);
+  });
+
+  /** Block 3 with a bot that types everything except the thrower; `typeAxes`: the thrown axes too. */
+  const throwerRun = (typeAxes: boolean) => {
+    const s = loadScene(dir!, 1, 3, Infinity);
+    let busy = 0, thrower: Zombie | undefined, maxItems = 0, left = false;
+    const axes = new Set<ThrownItem>(), words = new Set<string>();
+    for (let f = 0, after = 0; f < 60 * 60 && after < 2; f++) {
+      s.step();
+      if (busy > 0) busy--;
+      const objs = s.objects.map((o) => o.obj);
+      if (left && !objs.some((o) => o instanceof ThrownItem)) after++; // the last axe is gone too
+      thrower ??= objs.find((o): o is Zombie => o instanceof Zombie && o.behaviour === 33);
+      const items = objs.filter((o): o is ThrownItem => o instanceof ThrownItem);
+      items.forEach((i) => axes.add(i));
+      maxItems = Math.max(maxItems, items.length);
+      for (const b of s.boxes.boxes) if (b.shown && b.owner instanceof ThrownItem && b.word) words.add(b.word);
+      if (s.world.inFight && s.world.targets[0] === -1 && !busy) {
+        const b = s.boxes.boxes.find((x) => x.shown && x.typed === 0 && x.owner !== thrower && (typeAxes || !(x.owner instanceof ThrownItem)));
+        if (b) {
+          s.type(b.word!);
+          busy = b.word!.length + 2;
+        }
+      }
+      if (thrower && !objs.includes(thrower)) left = true;
+    }
+    return { s, thrower, axes: [...axes], maxItems, words: [...words], left };
+  };
+
+  it('the thrower (behaviour 33, block 3): two axes, one at a time, each a one-letter word; untyped ones hit for 4; then it backs off and leaves', () => {
+    const { s, thrower, axes, maxItems, words, left } = throwerRun(false);
+    expect(thrower).toBeDefined();
+    expect(axes.length).toBe(2);
+    expect(maxItems).toBe(1); // the axe keeps the attack slot until it is gone
+    expect(axes.every((a) => a.model === 0x271)).toBe(true);
+    expect(words.length).toBeGreaterThan(0);
+    for (const w of words) expect(w).toMatch(/^[A-Z]$/);
+    expect(s.hits.filter((h) => h.damage === 4).length).toBe(2);
+    expect(left).toBe(true); // backed off (behaviour 15, flag 0x20000000) and left the fight
+  });
+
+  it('the thrower: a typed axe breaks off — no hit, the attack slot is free again', () => {
+    const { s, axes } = throwerRun(true);
+    expect(axes.length).toBeGreaterThanOrEqual(1);
+    expect(axes.every((a) => a.behaviour === 3)).toBe(true);
+    expect(s.hits.filter((h) => h.damage === 4).length).toBe(0);
   });
 
   it('word boxes: the first wave gets three category-1 words with different first letters, shown in the fight', () => {

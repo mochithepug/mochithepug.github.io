@@ -15,8 +15,9 @@ Status: **G** = changes gameplay (a scene plays wrongly or cannot finish), **P**
 
 | Item | Where | Status | Notes |
 |---|---|---|---|
-| Zombie behaviour 33 — thrower (`FUN_00448310`) + thrown items (task `FUN_00449d20`, own word box) | blocks 3, 4, 8 | G | zombie stands still; items never thrown |
-| Zombie behaviours 37 → 38 (`FUN_0044aaf0`, `FUN_0044af70`) | block 6 (civilian attacker) | G | civilian scene in block 6 |
+| ~~Zombie behaviour 33 — thrower + thrown axes~~ | blocks 3, 4, 8 | done 2026-11-25 | the axe-type flight; other item types (state 2 `FUN_00448fa0`) and skeleton 0x14's items not ported |
+| Zombie behaviour 9 — death of a zombie flagged 0x100000 / kinds 5–6 (the balcony thrower falls?) | block 3 | G | freezes when typed |
+| Zombie behaviours 37 → 38 (`FUN_0044aaf0`, `FUN_0044af70`) | block 6 (civilian attacker) | G | holds and throws an item object (task `FUN_0042fcd0`, functions @005a1ce0) at the civilian or a player |
 | ~~Zombie behaviour 39 (`FUN_0044b280`)~~ | blocks 6, 9 | done 2026-11-24 | hidden until the civilian's op 0x1A releases it |
 | ~~Zombie behaviour 0x2D (`FUN_0044bf80`)~~ | after 34 / 35 | done 2026-11-24 | short pause after the victim dies, then the next behaviour |
 | Type 0x11 — frog (`FUN_004279f0`), single-letter words | block 3 (×3) | G | not spawned |

@@ -29,6 +29,7 @@
 import { identity, invert, mul, scaleLocal, transformDir, transformPoint, translateLocal, readSteps, type SpawnRecord, type StepEntry } from '@ttotd/formats';
 import { rotationMatrix, toAngle } from '../core/angles.ts';
 import type { DrawItem, GameObject, World } from '../core/object.ts';
+import { ThrownItem } from './thrown-item.ts';
 import type { WordOwner } from './wordbox.ts';
 import { CharacterRig, type Placement } from '../core/rig.ts';
 
@@ -53,6 +54,13 @@ export const heading = (dx: number, dz: number) => toAngle(Math.atan2(dx, dz));
 
 const view = (b: Uint8Array | undefined) => (b ? new DataView(b.buffer, b.byteOffset, b.byteLength) : undefined);
 const f32 = Math.fround;
+
+/** Thrower hands (FUN_00448310 / FUN_00449980): item model ranges on joints 5 / 8 (exclusive), the empty-hand models,
+ * and what to subtract from the hand model to get the thrown item's model. (Skeleton 0x14's items: not ported.) */
+const HANDS: Record<number, { j5: [number, number]; j8: [number, number]; empty5: number; empty8: number; item5: number; item8: number }> = {
+  1: { j5: [0x1ef3, 0x1ef7], j8: [0x1eed, 0x1ef1], empty5: 0x1ef9, empty8: 0x1ef3, item5: 0x20, item8: 0x1d },
+  0x13: { j5: [0x221e, 0x2224], j8: [0x2216, 0x221c], empty5: 0x221c, empty8: 0x2214, item5: 0x1fae, item8: 0x1fa6 },
+};
 
 export class Zombie implements GameObject, WordOwner {
   readonly rig: CharacterRig;
@@ -283,6 +291,7 @@ export class Zombie implements GameObject, WordOwner {
     else if (this.behaviour === 7) this.sink();
     else if (this.behaviour === 39) this.waitRelease(w);
     else if (this.behaviour === 5) this.waitTurn(w);
+    else if (this.behaviour === 33) this.throwItems(w);
     else if (this.behaviour === 0x2d) this.pauseOverVictim(w);
   }
 
@@ -411,6 +420,128 @@ export class Zombie implements GameObject, WordOwner {
     }
     this.allowance = a!;
     return d > near! ? 2 : 1;
+  }
+
+  /** Behaviour 33: frames left (+0x1334), the hand being thrown from (+0x1360) and the attack row (+0x131e). */
+  private throwTimer = 0;
+  private throwHand = 0;
+  private throwRow = 0;
+
+  /** Items in hand: joints 5 / 8 holding an item model (the hand model ranges per skeleton, FUN_00448310). */
+  private handItems(): [boolean, boolean] {
+    const H = HANDS[this.skeleton];
+    if (!H) return [false, false];
+    const m5 = this.rig.model(5), m8 = this.rig.model(8);
+    return [m5 > H.j5[0] && m5 < H.j5[1], m8 > H.j8[0] && m8 < H.j8[1]];
+  }
+
+  /** FUN_00448110: which hand throws — both full: by a random bit; sets the attack row (hand 5 → row 0, else 1). */
+  private chooseHand(w: World): number {
+    const [h5, h8] = this.handItems();
+    const even = (w.rand() & 1) === 0;
+    const hand = even ? (h5 ? 5 : h8 ? 8 : 0) : h8 ? 8 : h5 ? 5 : 0;
+    this.throwRow = hand === 5 ? 0 : 1;
+    return hand;
+  }
+
+  /** FUN_00449980: let go of the item in `hand` — the hand shows empty, the item flies as its own object. */
+  private throwFromHand(w: World, hand: number) {
+    const H = HANDS[this.skeleton];
+    if (!H) return;
+    const cur = this.rig.model(hand);
+    const model = hand === 5 ? cur - H.item5 : cur - H.item8;
+    this.rig.modelOverride.set(hand, hand === 5 ? H.empty5 : H.empty8);
+    const j = this.rig.joints[hand]?.matrix;
+    const p = j ? transformPoint(j, [0, 0, 0]) : this.place.pos;
+    w.addObject?.(new ThrownItem(w, { pos: [p[0]!, p[1]!, p[2]!], model, player: this.victim, strong: this.kind === 7 }));
+  }
+
+  /** FUN_004444e0: leave the fight at once (counts, attack slot) and end. */
+  private removeSelf(w: World) {
+    w.attackers--; // FUN_00445660
+    w.enemies--; // FUN_00445680
+    this.releaseAttack(w); // FUN_00445620
+    this.dead = true;
+  }
+
+  /**
+   * Behaviour 33 (FUN_00448310): the thrower (kind 7). Idle for record +4 (two items) / +8 (one) frames; then the
+   * attack timer is cleared (FUN_004b1410(0)) and it asks for the attack slot; the throw motion (attack row by hand,
+   * blend 4); at the row's frame the item is launched (FUN_00449980). Items left → again; none → idle record +0xC
+   * frames, then (record next 0) back off — flag 0x20000000, distance = record +0x10 (float) — with behaviour 15,
+   * which ends by leaving the fight. Other kinds throw once and approach (1). No items at the start → it leaves.
+   */
+  private throwItems(w: World) {
+    const r = this.rig, kind7 = this.kind === 7;
+    const idle = w.motionSet(this.skeleton, this.kind)?.[0];
+    const holdIdle = () => {
+      if (idle !== undefined && r.motion !== idle) r.blendTo(idle, w.rand() % w.motions.frames(idle), 5);
+    };
+    const row = () => w.attackTable(this.skeleton, this.kind)?.rows[this.throwRow];
+    if (this.state === 0) {
+      if (kind7) {
+        if (!(this.flags & 0x1000000)) this.flags2 = (this.flags2 | (this.flags & 0x20000 ? 0x100001 : 1)) >>> 0;
+        const n = this.handItems().filter(Boolean).length;
+        if (n === 0) return this.removeSelf(w);
+        this.throwTimer = this.i32(n === 2 ? 4 : 8);
+      }
+      this.state = 1;
+    }
+    if (this.state === 1) {
+      if (kind7) {
+        holdIdle();
+        if (--this.throwTimer > 0) return;
+      }
+      this.state = 2;
+    }
+    if (this.state === 2) {
+      if (kind7) {
+        w.attackTimer = 0; // FUN_004b1410(0)
+        if (!this.requestAttack(w)) return holdIdle();
+      }
+      this.flags = (this.flags | 0x10000000) >>> 0;
+      this.throwHand = this.chooseHand(w);
+      const a = row();
+      if (a) r.blendTo(a.attack, 0, 4);
+      w.rand(); // attack voice (FUN_00437ab0 case 3), not played
+      this.state = 3;
+    }
+    if (this.state === 3) {
+      const a = row();
+      if (a && r.frame !== a.hitFrame) return;
+      if (this.throwHand) this.throwFromHand(w, this.throwHand);
+      this.state = 4;
+    }
+    if (this.state === 4) {
+      if (r.frame < w.motions.frames(r.motion) - 1) return;
+      this.flags = (this.flags & ~0x10000000) >>> 0;
+      this.flags2 = (this.flags2 & ~0x20000) >>> 0;
+      if (!kind7) {
+        this.behaviour = 1;
+        this.state = 0;
+        return;
+      }
+      if (this.handItems().some(Boolean)) {
+        this.state = 0;
+        return;
+      }
+      this.throwTimer = this.i32(0xc);
+      this.state = 5;
+    }
+    if (this.state === 5) {
+      holdIdle();
+      if (--this.throwTimer > 0) return;
+      this.flags = (this.flags & ~0x1000000) >>> 0;
+      if ((((this.tail?.[3] ?? 0) << 24) >> 24) === 0) {
+        this.flags = (this.flags | 0x20000000) >>> 0; // back off …
+        this.walkDistance = this.f(0x10); // … this far (raw float, +0x1374)
+        this.behaviour = 15;
+        this.state = 1;
+      } else {
+        this.behaviour = 0x1a; // leap with record +0x10.. (not used by Stage 1's throwers)
+        this.state = 1;
+      }
+    }
   }
 
   /** Behaviour 5 (FUN_004446c0): wait (idle motion by flag +0x1370 bit 21), facing the player, until the queue moves. */
@@ -827,7 +958,8 @@ export class Zombie implements GameObject, WordOwner {
     const d = f32(Math.hypot(this.walkStart[2] - this.place.pos[2], this.walkStart[0] - this.place.pos[0]));
     if (this.walkDistance <= d) {
       this.spot = [...this.place.pos];
-      this.behaviour = 1; // (flag 0x20000000: FUN_004444e0, not ported)
+      if (this.flags & 0x20000000) return this.removeSelf(w); // backed off: leaves the fight (FUN_004444e0)
+      this.behaviour = 1;
       this.state = 0;
     }
   }

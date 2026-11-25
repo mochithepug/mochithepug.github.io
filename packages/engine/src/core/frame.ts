@@ -55,6 +55,10 @@ export class FrameStepper {
     this.sample = sample;
     this.fightCam = new FightCamera(pe);
     world.spawn = (rec, parent) => this.add(rec, parent);
+    world.addObject = (obj) => {
+      this.objects.push({ obj, type: -1 });
+      this.boxes.attach(obj);
+    };
   }
 
   /** Create an object for a spawn record (also civilians' attackers, via `world.spawn`). */

@@ -109,6 +109,8 @@ export interface World {
   attackCounts?: number[];
   /** This frame's zombie queue (FUN_00420720): ranked nearest first at the start of the next frame (FUN_004207c0). */
   queue?: QueueEntry[];
+  /** Add an object made by another object (a thrown item); it gets a word box if it is a word owner. */
+  addObject?(obj: GameObject): void;
   /** Civilians still in play (DAT_00a3e7a8): +1 at set-up, −1 once at a 0x80000 segment or when removed. */
   civilians?: number;
   /** Player states (lives, grace — core/player.ts); index = player. */

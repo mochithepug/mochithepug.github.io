@@ -495,3 +495,12 @@ DAT_005ea728 — no attack may start until it runs out; it restarts at 390 frame
 word box gets its word, a word is completed or a hit counts. Ported. **Verified:** test (first attack ≥ 360 frames
 after the last word appears; hits ≥ 150 frames apart); PLAY: 392 frames from the last word to the first swing.
 Also: the zombie's +0x1370 starts from the record (word 8 | 0x60000000).
+
+### Thrower and thrown axes (2026-11-25)
+**Delivered:** zombie behaviour 33 (blocks 3, 4, 8): idles, clears the attack timer, takes the slot, throws one
+axe at a time from its hands (the hand shows empty); each axe flies at the camera with a one-letter word box — typed
+it breaks off, untyped it hits for 4 and sticks for a moment; after both, the thrower backs off and leaves.
+**Verified:** tests (two axes, one at a time, letters, hits, leaving; typed axes break off); PLAY screenshots
+from block 3 (axe with its letter box, the thrower at the window).
+**Not yet:** behaviour 9 (the balcony thrower's death — it freezes when typed), behaviour 37 (block 6's item
+thrower), other item types.
